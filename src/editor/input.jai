@@ -164,8 +164,13 @@ Input_State :: struct {
     window_size: IVector2;
     window_scale_factor: f32;
 
+    mouse_position: Vector2;
+
+    mb_left_last_press: Apollo_Time;
+    mb_left_multiclicks: s64;
+
     keys: [KEY_COUNT] Key_State;
-    modifiers: Modifier_Flags; // Modifier state as of last event. See Event.modifiers for precise information.
+    modifiers: Modifier_Flags; // Modifier state as of last event. See Event.modifiers.
 }
 
 Key_State :: enum_flags u8 {
@@ -177,14 +182,24 @@ Key_State :: enum_flags u8 {
 }
 
 input_state_update_on_frame_start :: (input_state: *Input_State, input: Input) {
+    if length(input_state.mouse_position - input.mouse_position) > MULTICLICK_ABORT_DISTANCE_PIXELS * input.window_scale_factor {
+        input_state.mb_left_multiclicks = 0;
+    }
+
+    if input.time - input_state.mb_left_last_press > MULTICLICK_PERIOD {
+        input_state.mb_left_multiclicks = 0;
+    }
+
+    for * input_state.keys {
+        it.* &= ~(.PRESSED | .RELEASED);
+    }
+
     input_state.time = input.time;
 
     input_state.window_size = input.window_size;
     input_state.window_scale_factor = input.window_scale_factor;
 
-    for * input_state.keys {
-        it.* &= ~(.PRESSED | .RELEASED);
-    }
+    input_state.mouse_position = input.mouse_position;
 }
 
 input_state_update_with_event :: (input_state: *Input_State, event: Input_Event) {
@@ -193,6 +208,11 @@ input_state_update_with_event :: (input_state: *Input_State, event: Input_Event)
 
         if event.flags & .PRESSED {
             input_state.keys[key] |= .DOWN | .PRESSED;
+
+            if key == .MB_LEFT {
+                input_state.mb_left_last_press = input_state.time;
+                input_state.mb_left_multiclicks += 1;
+            }
         } else {
             // Do not clear PRESSED. So that we can detect single-frame press and release.
             input_state.keys[key] &= ~.DOWN;

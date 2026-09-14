@@ -17,7 +17,7 @@ Text_Buffer :: struct {
     edit_text_arena: *Arena;
     edit_text_arena_mark: Arena_Mark;
 
-    gb: Gap_Buffer;   // Stores the UTF-8 bytes.
+    gb: Gap_Buffer;
 
     // SoA version of a line struct:
     //
@@ -32,20 +32,20 @@ Text_Buffer :: struct {
 
     // TODO(jt): @Memory A slight improvement on having edit texts in a separate arena is also
     // having the edits there as a linked list. When we discard_unapplied_edits, we can also fully
-    // nuke the edit metadata. This will leave just gap_buffer, line_bytes and line_chars sharing
-    // the main arena.
+    // nuke the edit metadata. This will leave just gap_buffer, line_bytes, line_chars and chunks.gb_indices
+    // sharing the main arena.
     //
     // UPDATE: after editing a (less than 1000 lines) file for the whole day,
     // the buffer arena claimed up to 5MB. Probably need to do something about it long term.
     edits: [..] Edit;
     // Undoing decreases this. Redoing increases. When editing, this is the same as edits.count,
-    // because edits that were undone are discarded (at least until we do Emacs-like undo)
+    // because edits that were undone are discarded.
     applied_edit_count: s64;
 
     binary_mode: bool;
 
-    // Chunks is a cache of gap buffer indices per a chunk of lines. It is here so text_buffer_get_gap_buffer_index_for_{line,location}
-    // don't have to count up the byte index from the start of the document, only from last chunk. Edits invalidate the cache below
+    // Chunks is a cache of gap buffer indices per a chunk of lines. It is here so text_buffer_get_gap_buffer_index_for_line/location
+    // doesn't have to count up the byte index from the start of the document, only from last chunk. Edits invalidate the cache below
     // the edit, and getting a gap buffer index reconstructs it. Doing this means we traverse (parts of) the document ~once per edit,
     // not many times per frame. With the cache we can navigate around and perform simple edits for very large documents (> 1GB) without
     // dropping frames.
@@ -156,7 +156,7 @@ Edit :: struct {
     Type :: enum u32 {
         INSERT_FORWARD;
         INSERT_FORWARD_MEMSET;
-        // INSERT_BACKWARD does not exist as a human-triggered action, but the undo system support
+        // INSERT_BACKWARD does not exist as a human-triggered action, but the undo system supports
         // it to undo DELETE_BACKWARD.
 
         DELETE_FORWARD;
@@ -258,7 +258,7 @@ text_buffer_insert_char :: (buffer: *Text_Buffer, cursors: *Text_Cursors, char: 
     s.data = buf.data;
     Unicode.character_utf32_to_utf8(char, *s);
 
-    return text_buffer_insert(buffer, cursors, s, undo_modifier);
+    return /*inline?*/ text_buffer_insert(buffer, cursors, s, undo_modifier);
 }
 
 text_buffer_insert :: (buffer: *Text_Buffer, cursors: *Text_Cursors, bytes: [] u8, undo_modifier := Undo_Modifier.NONE) -> changed: bool {
@@ -665,7 +665,7 @@ text_buffer_delete_forward_word :: (buffer: *Text_Buffer, cursors: *Text_Cursors
     assert_valid(buffer, cursors);
 
     search_cursors := cursors.*;
-    moved := text_buffer_move_to_next_word_boundary(buffer, *search_cursors, false);
+    moved := text_buffer_move_forward_word(buffer, *search_cursors, false);
     if !moved {
         return "";
     }
@@ -717,7 +717,7 @@ text_buffer_delete_backward_word :: (buffer: *Text_Buffer, cursors: *Text_Cursor
     assert_valid(buffer, cursors);
 
     search_cursors := cursors.*;
-    moved := text_buffer_move_to_previous_word_boundary(buffer, *search_cursors, false);
+    moved := text_buffer_move_backward_word(buffer, *search_cursors, false);
     if !moved {
         return "";
     }
@@ -1636,34 +1636,33 @@ text_buffer_move_to_end_of_line :: (buffer: Text_Buffer, cursors: *Text_Cursors,
     return original_cursor != cursors.c0;
 }
 
-text_buffer_move_to_previous_word_boundary :: (buffer: Text_Buffer, cursors: *Text_Cursors, selecting: bool) -> cursor_moved: bool, cursor_y_moved: bool {
-    ProfileZone("text_buffer_move_to_previous_word_boundary");
+text_buffer_move_forward_word :: (buffer: Text_Buffer, cursors: *Text_Cursors, selecting: bool, can_move_vertically := true) -> cursor_moved: bool, cursor_y_moved: bool {
+    ProfileZone("text_buffer_move_forward_word");
 
     assert_valid(buffer, cursors);
 
     original_cursor := cursors.c0;
 
-    line_start         := text_buffer_get_start_of_line(buffer, cursors.c0.y);
-    view_before_cursor := text_buffer_make_view_for_interval(buffer, line_start, cursors.c0,, temp);
+    line_end          := text_buffer_get_end_of_line(buffer, cursors.c0.y);
+    view_after_cursor := text_buffer_make_view_for_interval(buffer, cursors.c0, line_end,, temp);
 
-    found, inside_word, dx := search_line_backward(view_before_cursor, buffer.binary_mode);
-    if found || inside_word {
-        cursors.c0.x -= dx;
-    } else {
+    found, inside_word, dx := search_line_forward(view_after_cursor, buffer.binary_mode);
+    cursors.c0.x += dx;
+
+    if can_move_vertically && !found && !inside_word {
         while true {
-            previous_cursor := cursors.c0;
-            text_buffer_move_y(buffer, cursors, -1, selecting);
-            if previous_cursor.y == cursors.c0.y {
+            moved := text_buffer_move_y(buffer, cursors, 1, selecting);
+            if !moved {
                 break;
             }
 
-            cursors.c0 = text_buffer_get_end_of_line(buffer, cursors.c0.y);
+            cursors.c0.x = 0;
 
             line_view := text_buffer_make_view_for_line(buffer, cursors.c0.y,, temp);
 
-            found, inside_word, dx = search_line_backward(line_view, buffer.binary_mode);
+            found, inside_word, dx = search_line_forward(line_view, buffer.binary_mode);
             if found || inside_word {
-                cursors.c0.x -= dx;
+                cursors.c0.x += dx;
                 break;
             }
         }
@@ -1679,34 +1678,33 @@ text_buffer_move_to_previous_word_boundary :: (buffer: Text_Buffer, cursors: *Te
     return original_cursor != cursors.c0, original_cursor.y != cursors.c0.y;
 }
 
-text_buffer_move_to_next_word_boundary :: (buffer: Text_Buffer, cursors: *Text_Cursors, selecting: bool) -> cursor_moved: bool, cursor_y_moved: bool {
-    ProfileZone("text_buffer_move_to_next_word_boundary");
+text_buffer_move_backward_word :: (buffer: Text_Buffer, cursors: *Text_Cursors, selecting: bool, can_move_vertically := true) -> cursor_moved: bool, cursor_y_moved: bool {
+    ProfileZone("text_buffer_move_backward_word");
 
     assert_valid(buffer, cursors);
 
     original_cursor := cursors.c0;
 
-    line_end          := text_buffer_get_end_of_line(buffer, cursors.c0.y);
-    view_after_cursor := text_buffer_make_view_for_interval(buffer, cursors.c0, line_end,, temp);
+    line_start         := text_buffer_get_start_of_line(buffer, cursors.c0.y);
+    view_before_cursor := text_buffer_make_view_for_interval(buffer, line_start, cursors.c0,, temp);
 
-    found, inside_word, dx := search_line_forward(view_after_cursor, buffer.binary_mode);
-    if found || inside_word {
-        cursors.c0.x += dx;
-    } else {
+    found, inside_word, dx := search_line_backward(view_before_cursor, buffer.binary_mode);
+    cursors.c0.x -= dx;
+
+    if can_move_vertically && !found && !inside_word {
         while true {
-            previous_cursor := cursors.c0;
-            text_buffer_move_y(buffer, cursors, 1, selecting);
-            if previous_cursor.y == cursors.c0.y {
+            moved := text_buffer_move_y(buffer, cursors, -1, selecting);
+            if !moved {
                 break;
             }
 
-            cursors.c0.x = 0;
+            cursors.c0 = text_buffer_get_end_of_line(buffer, cursors.c0.y);
 
             line_view := text_buffer_make_view_for_line(buffer, cursors.c0.y,, temp);
 
-            found, inside_word, dx = search_line_forward(line_view, buffer.binary_mode);
+            found, inside_word, dx = search_line_backward(line_view, buffer.binary_mode);
             if found || inside_word {
-                cursors.c0.x += dx;
+                cursors.c0.x -= dx;
                 break;
             }
         }
@@ -1808,6 +1806,55 @@ text_buffer_move_to_next_blank_line :: (buffer: Text_Buffer, cursors: *Text_Curs
     assert_valid_cursors(buffer, cursors);
 
     return original_cursor != cursors.c0;
+}
+
+// TODO(jt): @Incomplete Make text_buffer_expand_selection expands as follows:
+//
+// x = CommandBuffer::push(blah);
+//         ^
+//     ^           ^
+//     ^                 ^
+//     ^                       ^
+// ^                            ^
+//
+// The best way to do this would be to have a parser for our current text and traverse up the tree to get regions,
+// but maybe there is a heuristic way of doing this? Maybe a precedence for various nonword characters, so that it
+// behaves more like expand-region.el in Emacs. We already do something like this for the lines.
+text_buffer_expand_selection :: (buffer: Text_Buffer, cursors: *Text_Cursors) -> cursor_moved: bool {
+    ProfileZone("text_buffer_expand_selection_word");
+
+    assert_valid(buffer, cursors);
+
+    text_location_sort(*cursors.c0, *cursors.c1);
+
+    original_c0 := cursors.c0;
+    original_c1 := cursors.c1;
+
+    backward, backward_crossed_line := text_buffer_move_backward_word(buffer, cursors, true);
+    swap(*cursors.c0, *cursors.c1);
+    forward, forward_crossed_line := text_buffer_move_forward_word(buffer, cursors, true);
+
+    // We want the selection to grow somewhat systematically. The first step towards that is that both
+    // cursors must want to advance to a new line, before any of them can.
+
+    if cursors.c0 == text_buffer_get_end(buffer)    forward_crossed_line = true;
+    if cursors.c1 == text_buffer_get_start(buffer)  backward_crossed_line = true;
+
+    if backward_crossed_line && !forward_crossed_line {
+        swap(*cursors.c0, *cursors.c1);
+        cursors.c0 = original_c0;
+        text_buffer_move_backward_word(buffer, cursors, true, can_move_vertically = false);
+        swap(*cursors.c0, *cursors.c1);
+    } else if forward_crossed_line && !backward_crossed_line {
+        cursors.c0 = original_c1; // Not a typo. This acccounts for the swap.
+        text_buffer_move_forward_word(buffer, cursors, true, can_move_vertically = false);
+    }
+
+    text_cursors_horizontal_move_was_explicit(cursors);
+
+    assert_valid_cursors(buffer, cursors);
+
+    return forward || backward;
 }
 
 text_buffer_clamp_cursors :: (buffer: Text_Buffer, cursors: *Text_Cursors) {
@@ -2435,7 +2482,7 @@ _search_line_backward :: (line: string, $binary: bool) -> found: bool, inside_wo
 
     ITERATOR :: #ifx binary then string_bytes_iter else Unicode.utf8_iter;
     for < :ITERATOR line {
-        is_nonword := #ifx binary then char_is_nonword_binary(it) else char_is_nonword_utf8(it);
+        is_nonword := char_is_nonword(it);
 
         if !inside_word_initial_set {
             inside_word             = !is_nonword;
@@ -2481,7 +2528,7 @@ _search_line_forward :: (line: string, $binary: bool) -> found: bool, inside_wor
 
     ITERATOR :: #ifx binary then string_bytes_iter else Unicode.utf8_iter;
     for :ITERATOR line {
-        is_nonword := #ifx binary then char_is_nonword_binary(it) else char_is_nonword_utf8(it);
+        is_nonword := char_is_nonword(it);
 
         if !inside_word_initial_set {
             inside_word             = !is_nonword;
@@ -2535,37 +2582,15 @@ is_simple_edit :: (text: string) -> bool {
     return false;
 }
 
-// TODO(jt): Make this configurable (per-programming language)?  :Config
-char_is_nonword_utf8 :: inline (c: u32) -> bool {
-    if c == {
-        case #char " ";   return true;
-        case #char "\t";  return true;
-        case #char "_";   return true;
-        case #char "-";   return true;
-        case #char ".";   return true;
-        case #char ",";   return true;
-        case #char ";";   return true;
-        case #char ":";   return true;
-        case #char "(";   return true;
-        case #char ")";   return true;
-        case #char "<";   return true;
-        case #char ">";   return true;
-        case #char "{";   return true;
-        case #char "}";   return true;
-        case #char "[";   return true;
-        case #char "]";   return true;
-        case #char "\"";  return true;
-        case #char "'";   return true;
-    }
+// TODO(jt): @Incomplete Support unicode?
+char_is_nonword :: inline (c: u32) -> bool {
+    c0 := c < 48;
+    // 0-9 live here
+    c1 := c > 57 && c < 65;
+    // A-Z live here
+    c2 := c > 90 && c < 97;
+    // a-z live here
+    c3 := c > 122;
 
-    return false;
-}
-
-char_is_nonword_binary :: inline (c: u8) -> bool {
-    if c >= 48 && c <= 57   return false; // 0..9
-    if c >= 64 && c <= 90   return false; // A..Z
-    if c >= 97 && c <= 122  return false; // a..z
-    if c >= 43 && c <= 44   return false; // pound and dollar
-
-    return true;
+    return c0 || c1 || c2 || c3;
 }
