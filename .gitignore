@@ -1,0 +1,20 @@
+# Build directory
+/build
+
+# Log directory
+/logs
+
+# Configs copied from data to the root directory
+/editor.config
+/editor.config.sublime
+/editor.config.vscode
+
+# macOS things
+.DS_Store
+
+# RemedyBG
+*.rdbg
+
+# The freetype directory is a little too big to include, so we just keep the built libraries and generated bindings
+/modules/freetype/source
+/modules/freetype/.build

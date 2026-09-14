@@ -1,5 +1,1191 @@
-#import "Basic";
+f32 :: float32;
+f64 :: float64;
+
+#if #exists(__VERSION_MAJOR) {
+    VERSION_MAJOR :: __VERSION_MAJOR;
+} else {
+    VERSION_MAJOR :: 0;
+}
+
+#if #exists(__VERSION_MINOR) {
+    VERSION_MINOR :: __VERSION_MINOR;
+} else {
+    VERSION_MINOR :: 0;
+}
+
+#if #exists(__VERSION_PATCH) {
+    VERSION_PATCH :: __VERSION_PATCH;
+} else {
+    VERSION_PATCH :: 0;
+}
+
+#if #exists(__BUILD_TIMESTAMP) {
+    BUILD_TIMESTAMP :: __BUILD_TIMESTAMP;
+} else {
+    BUILD_TIMESTAMP :: "unknown date";
+}
+
+// DEBUG_MEMORY enables runtime allocation tracking and leak reporting.
+//
+// :MemoryDebuggerVsArenas
+//
+// MEMORY_DEBUGGER doesn't work well with arena-style allocation unless someone calls free.
+// JAI's Temporary_Storage, Pool and Flat_Pool are all ignored by MEMORY_DEBUGGER,
+// but for now there is no way to add a custom ignore.
+//
+// TODO(jt): @Cleanup Memory_Debugger.jai needs to be modified so that our arena allocations get omitted from the report:
+//
+// Preamble :: () #expand {
+//     ... snip ...
+//     caps := cast(Allocator_Caps, `allocator.proc(.CAPS, 0, 0, null, `allocator.data));
+//     if caps & .HINT_I_AM_A_FAST_BUMP_ALLOCATOR      `return;
+//     ... snip ...
+// }
+//
+// I mailed this in, but now we have to wait.
+//
+// TODO(jt): @Bug @LibraryBug? make_leak_report crashes on macOS! Investigate.
+//
+// TODO(jt): @CompilerBug I'd like to make this a switch supplied by the metaprogram (like SANITY, etc.),
+// but it causes cycles. Hardcoded for this reason.
+DEBUG_MEMORY :: false;
+DEBUG_MEMORY_LEAK_REPORT_PERIOD: Apollo_Time : #run seconds_to_apollo(10);
+
+/*
+
+TODO(jt): @LibraryBug Investigate more and mail this in!
+
+Our own leak checking interface could be this simple, but first we'd need to be able to override this_allocation_is_not_a_leak.
+Otherwise replacing the default interface just gets you a crash:
+
+handle_exception                  C:\Users\yanchith\workspace\jai\modules\Runtime_Support_Crash_Handler.jai:362
+... (skipping OS-internal procedures)
+RtlWaitOnAddress                  unknown:0
+RtlEnterCriticalSection           unknown:0
+RtlEnterCriticalSection           unknown:0
+lock                              C:\Users\yanchith\workspace\jai\modules\Thread\primitives.jai:694
+this_allocation_is_not_a_leak     C:\Users\yanchith\workspace\jai\modules\Basic\Memory_Debugger.jai:256
+add_resize_record                 C:\Users\yanchith\workspace\editor\modules\Input\windows.jai:645
+MyWindowProc                      C:\Users\yanchith\workspace\editor\modules\Input\windows.jai:237
+CallWindowProcW                   unknown:0
+DispatchMessageW                  unknown:0
+SendMessageTimeoutW               unknown:0
+KiUserCallbackDispatcher          unknown:0
+NtUserShowWindow                  unknown:0
+create_window                     C:\Users\yanchith\workspace\jai\modules\Window_Creation\windows.jai:56
+main                              C:\Users\yanchith\workspace\editor\src\main.jai:235
+
+    DEBUG_MEMORY_PROCS :: struct {
+        check_alloc :: _check_alloc_proc;
+        check_free  :: inline (allocator: Allocator, memory: *void) {};
+
+        check_create_heap  :: inline (a: Allocator) {};
+        check_destroy_heap :: inline (a: Allocator) {};
+    };
+
+    #add_context inside_memory_debug_proc := false;
+
+    _check_alloc_proc :: inline (allocator: Allocator, memory: *void, size: s64) {
+        caps := cast(Allocator_Caps, allocator.proc(.CAPS, 0, 0, null, allocator.data));
+        if caps & (.HINT_I_AM_A_FAST_BUMP_ALLOCATOR | .HINT_I_AM_PER_FRAME_TEMPORARY_STORAGE)  {
+            return;
+        }
+
+        if context.inside_memory_debug_proc {
+            return;
+        }
+
+        context.inside_memory_debug_proc = true;
+        defer context.inside_memory_debug_proc = false;
+
+        address := cast(s64, memory);
+
+        log_error("Allocation at address % of size %.", formatInt(address, base = 16, minimum_digits = 2 * size_of(s64)), size);
+        if context.stack_trace {
+            log_error("Allocation stack trace:");
+            log_stack_trace();
+        }
+    };
+*/
+
+// SANITY enables additional costly asserts for operations.
+#if #exists(__SANITY) {
+    SANITY :: __SANITY;
+} else {
+    SANITY :: false;
+}
+
+#if OS == .WINDOWS {
+    #if #exists(__WINDOWS_CONSOLE) {
+        WINDOWS_CONSOLE :: __WINDOWS_CONSOLE;
+    } else {
+        WINDOWS_CONSOLE :: false;
+    }
+
+    #if !WINDOWS_CONSOLE {
+        Windows_Resources :: #import "Windows_Resources";
+        #run Windows_Resources.disable_runtime_console();
+    }
+}
+
+#if OS == .WINDOWS {
+    #import "Windows";
+    #import "Windows_Utf8";
+
+    // TODO(jt): @Cleanup We define a few functions that are either not present in modules/Windows,
+    // or are commented out there. Eventually remove our version? Or eventually have just our
+    // version of modules/Windows and compile less stuff?
+    user32 :: #library,system "user32";
+
+    TRUE:  s32 : 1;
+    FALSE: s32 : 0;
+
+    UINT :: u32;
+
+    GetDpiForWindow :: (hWnd: HWND) -> UINT #foreign user32;
+    WaitMessage     :: ()           -> BOOL #foreign user32;
+} else #if OS == .MACOS {
+    #import "POSIX";
+    #import "macOS";
+    #import "Objective_C";
+    #import "Objective_C/AppKit";
+} else {
+    // TODO(jt): Linux.
+    #assert(false, "Unsupported OS");
+}
+
+#import "Basic"()(MEMORY_DEBUGGER = DEBUG_MEMORY);
+#import "Sort";
+#import "Hash_Table";
+#import "Thread";
+#import "GL";
+#import "Profiler"()(IMPORT_MODE = .RUNTIME);
+
+String         :: #import "String";
+Math           :: #import "Math";
+System         :: #import "System";
+File           :: #import "File";
+File_Utilities :: #import "File_Utilities";
+Window         :: #import "Window_Creation";
+Input          :: #import "Input";   // This is our modified version. See :ModifiedInputModule.
+Process        :: #import "Process"; // This is our modified version. See :ModifiedProcessModule.
+Clipboard      :: #import "Clipboard";
+Editor         :: #import,file "editor/editor.jai"()(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP, SANITY);
+
+floor   :: Math.floor;
+Vector4 :: Editor.Vector4;
+IRect   :: Editor.IRect;
+
+// TODO(jt): Simp/OpenGL works everywhere, but Simp is a little too big and OpenGL drivers a little too buggy.
+// Also it would be good if we could control the latency a little. Do our own backends?
+// Vulkan on Windows and Linue, and Metal on macOS? We could even try Aaltonen's NoGraphicsAPI.
+#load "renderer_simp.jai";
+#load "logger.jai";
+
+SCHEDULER_PRECISION_MILLIS :: 1;
+
+MAX_LOGFILES :: 10;
+
+// :OperatingSystemSpecificHacks
+//
+// For file watching on macOS, we have a #c_call callback, but we want it to use the main
+// thread's temporary storage. Fortunately, we know the callback is called from the main thread.
+#if OS == .MACOS {
+    main_thread_temporary_storage: *Temporary_Storage;
+}
 
 main :: () {
-    print("Hi");
+    time_of_program_start    := current_time_monotonic();
+    time_of_last_leak_report := time_of_program_start;
+
+    calendar_time_of_program_start := to_calendar(current_time_consensus());
+
+    profiler_init();
+    profiler_start_frame("init");
+
+    logger_data: Logger_Data;
+    logger_data.time_of_program_start = time_of_program_start;
+
+    context.logger           = logger;
+    context.logger_data      = *logger_data;
+    context.assertion_failed = assertion_failed;
+
+    // The default is to have these things next to the executable, but that doesn't always fly,
+    // so they are sometimes overriden.
+    data_path   := "./data";
+    log_path    := "./logs";
+    config_path := ".";
+
+    #if OS == .WINDOWS {
+        // :OperatingSystemSpecificHacks
+        //
+        // Unless you call SetProcessDPIAware, GetClientRect reports sizes in scaled pixels, which is not
+        // okay, if you do your own text rendering. We could further improve this with
+        // per-monitor awareness: SetProcessDpiAwarenessContext.
+        SetProcessDPIAware();
+        // :OperatingSystemSpecificHacks
+        //
+        // Unless we set timing resolution, our end of frame naptime on Windows is too course grained.
+        // See :BatterySaver in this file.
+        timeBeginPeriod(SCHEDULER_PRECISION_MILLIS);
+    } else #if OS == .MACOS {
+        // :OperatingSystemSpecificHacks
+        //
+        // Save main thread's temporary storage, so we can set it for event_stream_callback
+        // later. We know the callback runs on the main thread.
+        main_thread_temporary_storage = context.temporary_storage;
+
+        // :OperatingSystemSpecificHacks
+        //
+        // Working directory on macOS is weird. If you start from console, it respects the
+        // current console working directory. If you click on the executable, it starts in the
+        // user's HOME. We support running from console, running from .app, or running as a bare executable
+        // (with the same directory structure as when running from console).
+        //
+        if File_Utilities.is_directory("./data/fonts") {
+            // Running from console, nothing to do.
+        } else {
+            exe_file := System.get_path_of_running_executable();
+            exe_dir  := String.path_strip_filename(exe_file);
+            app_dir  := String.path_strip_filename(String.slice(exe_dir, 0, exe_dir.count - 1));
+
+            resources_dir := String.path_join(app_dir, "Resources"); // :Malloc
+
+            if File_Utilities.is_directory(resources_dir) {
+                // Running from an app bundle. Adjust data path.
+                data_path   = resources_dir;
+                log_path    = "~/Library/Logs/Editor";
+                config_path = "~/Library/Application Support/Editor";
+            } else {
+                // Running from a raw executable.
+                // Hopefully we will find our resources in our new working directory.
+                set_working_directory(exe_dir);
+            }
+        }
+    }
+
+    // Create a log file for the current session.
+    {
+        File.make_directory_if_it_does_not_exist(log_path);
+        t := calendar_time_of_program_start;
+
+        log_filename := tprint(
+            "%/editor_%%%_%%%%.log",
+            log_path,
+            formatInt(t.year, minimum_digits = 4),
+            formatInt(t.month_starting_at_0 + 1, minimum_digits = 2),
+            formatInt(t.day_of_month_starting_at_0 + 1, minimum_digits = 2),
+            formatInt(t.hour, minimum_digits = 2),
+            formatInt(t.minute, minimum_digits = 2),
+            formatInt(t.second, minimum_digits = 2),
+            t.millisecond,
+        );
+
+        logger_data.log_file = File.file_open(log_filename, for_writing = true);
+    }
+
+    log("Editor version %.%.%, built on %.", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP);
+
+    // Seed config files from data path.
+    {
+        File.make_directory_if_it_does_not_exist(config_path);
+
+        for string.[
+            "editor.config",
+            "editor.config.sublime",
+            "editor.config.vscode",
+        ] {
+            dest := tprint("%/%", config_path, it);
+            if !File_Utilities.file_exists(dest) {
+                source := tprint("%/config_templates/%", data_path, it);
+                File_Utilities.copy_file(source, dest);
+            }
+        }
+    }
+
+    // Clean up old log files. Keep MAX_LOGFILES recent files.
+    {
+        // TODO(jt): @Incomplete We can't do this for macOS .app, where the logs will not be stored next to the executable.
+        thread_proc :: (thread: *Thread) -> s64 {
+            if File_Utilities.is_directory("./logs") {
+                files: [..] string;
+                files.allocator = temp;
+
+                visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] string) {
+                    if String.starts_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
+                        array_add(userdata, visit_info.full_name);
+                    }
+                }
+
+                File_Utilities.visit_files("./logs", false, *files, visitor,
+                                           visit_files = true,
+                                           visit_directories = false,
+                                           visit_symlinks = false,
+                                           follow_directory_symlinks = false);
+
+
+                if files.count > MAX_LOGFILES {
+                    files_to_delete_count := files.count - MAX_LOGFILES;
+                    quick_sort(files, compare_strings);
+
+                    files_to_delete := array_view(files, 0, files_to_delete_count);
+
+                    log("Cleaning % old log(s)", files_to_delete_count);
+                    for files_to_delete {
+                        log("Deleting log: %", it);
+                        File.file_delete(it);
+                    }
+
+                    log("Done deleting % old log(s)", files_to_delete_count);
+                }
+            }
+
+            return 0;
+        };
+
+        thread: Thread;
+        thread_init(*thread, thread_proc, name = "Log Cleanup");
+        thread_start(*thread);
+    }
+
+    window := Window.create_window(1920, 1200, "editor");
+    renderer_init(window);
+
+    platform: Editor.Platform;
+    #if OS == .WINDOWS {
+        // :VirtualMemoryProcs
+        info: SYSTEM_INFO;
+        GetSystemInfo(*info);
+
+        platform.page_size = info.dwPageSize;
+        platform.mem_reserve = (size: s64) -> *void {
+            return VirtualAlloc(null, cast(u64, size), MEM_RESERVE, PAGE_READWRITE);
+        };
+        platform.mem_release = (pointer: *void, size: s64) {
+            VirtualFree(pointer, 0, MEM_RELEASE);
+        }
+        platform.mem_commit = (pointer: *void, size: s64) -> bool {
+            result := VirtualAlloc(pointer, cast(u64, size), MEM_COMMIT, PAGE_READWRITE);
+            return result != null;
+        }
+        platform.mem_decommit = (pointer: *void, size: s64) {
+            VirtualFree(pointer, cast(u64, size), MEM_DECOMMIT);
+        };
+    } else #if OS_IS_UNIX {
+        // :VirtualMemoryProcs
+        platform.page_size = sysconf(_SC_PAGE_SIZE);
+        platform.mem_reserve = (size: s64) -> *void {
+            result := mmap(null, cast(u64, size), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+            if result == MAP_FAILED {
+                result = null;
+            }
+
+            return result;
+        }
+        platform.mem_release = (pointer: *void, size: s64) {
+            munmap(pointer, cast(u64, size));
+        }
+        platform.mem_commit = (pointer: *void, size: s64) -> bool {
+            result := mprotect(pointer, cast(u64, size), PROT_READ | PROT_WRITE);
+            return result == 0;
+        }
+        platform.mem_decommit = (pointer: *void, size: s64) {
+            madvise(pointer, cast(u64, size), MADV_DONTNEED);
+            mprotect(pointer, cast(u64, size), PROT_NONE);
+        }
+    }
+
+    platform.get_current_time_monotonic = () -> Apollo_Time {
+        return current_time_monotonic();
+    }
+
+    platform.run_in_process = (_args: string, working_directory: string) -> exit_code: s32, exit_type: Editor.Exit_Type, output: string, error: string {
+        args := _args;
+        #if OS == .WINDOWS {
+            space_index := String.find_index_from_left(args, " ");
+            if space_index == -1 {
+                if String.ends_with(args, ".bat") {
+                    // A single bat file. CreateProcessW can't run this directly.
+                    // Instead, we need to run cmd.exe with a /c flag.
+                    //
+                    // We detect this simple case on the user's behalf, so they don't have to type that.
+                    args = tprint("cmd.exe /c %", _args);
+                }
+            }
+        }
+
+        // break_command_into_string always temps the result, so our context override is just futureproofing.
+        arguments := Process.break_command_into_strings(args,, temp);
+
+        result, output, error := Process.run_command(..arguments, working_directory = working_directory, capture_and_return_output = true, create_no_window = true);
+        if result.type != .EXITED {
+            log_error("Process result is %, exit code: %. Command was: %", result.type, result.exit_code, args);
+        }
+
+        exit_type: Editor.Exit_Type;
+        if result.type == {
+            case .UNSTARTED;         exit_type = .UNSTARTED;
+            case .STILL_RUNNING;     exit_type = .STILL_RUNNING;
+            case .FAILED_TO_LAUNCH;  exit_type = .FAILED_TO_LAUNCH;
+            case .EXITED;            exit_type = .EXITED;
+            case .SIGNALED;          exit_type = .SIGNALED;
+        }
+
+        return result.exit_code, exit_type, output, error;
+    }
+
+    platform.get_absolute_path = (path: string) -> success: bool, string {
+        // TODO(jt): @Cleanup File.get_absolute_path allocates in temp regardless of context allocator,
+        // but I suspect it will start respecting context eventually, so we pass in temp for future
+        // proofing. We should probably submit a fix for that.
+        //
+        // If the caller really wanted temp, we just return the thing. Otherwise, we copy the stuff to
+        // context allocator - see postamble.
+        //
+        _absolute_path, success := File.get_absolute_path(path,, temp);
+
+        #if OS_IS_UNIX {
+            // realpath on unix doesn't work for non-existing files, so we go one step further and
+            // try it on the directory, appending the file name back.
+            //
+            // TODO(jt): Eventually we'll need to do this for arbitrarily deep nonexistent suffixes, because
+            // we'll want to create files in nonexistent directories.
+            if !success {
+                dir_path, _, _, filename := String.path_decomp(path);
+                dir_absolute_path:, success = File.get_absolute_path(dir_path,, temp);
+
+                if success {
+                    _absolute_path = String.join(dir_absolute_path, filename, separator = "/");
+                }
+            }
+        }
+
+        absolute_path: string;
+        if context.allocator.proc == temp.proc && context.allocator.data == temp.data {
+            absolute_path = _absolute_path;
+        } else {
+            absolute_path = copy_string(_absolute_path);
+        }
+
+        return success, absolute_path;
+    }
+
+    platform.file_exists = (path: string) -> bool {
+        return File_Utilities.file_exists(path);
+    }
+    platform.file_is_directory = (path: string) -> bool {
+        is_directory, success := File_Utilities.is_directory(path);
+        return success && is_directory;
+    }
+    platform.file_modification_time_and_size = (path: string) -> bool, Apollo_Time, s64 {
+        modtime, size, exists := File_Utilities.file_modtime_and_size(path);
+        return exists, modtime, size;
+    }
+    platform.read_file = (path: string) -> success: bool, [] u8 {
+        // TODO(jt): @Bug On Windows we can't read our last log, because we already have it open.
+        // It is possible to mess with the permissions such that the second open and read works,
+        // but for now I decided not to do it.
+        data, success := File.read_entire_file(path);
+        return success, cast([] u8, data);
+    }
+    platform.write_file = (path: string, data: [] u8) -> success: bool {
+        return File.write_entire_file(path, cast(string, data));
+    }
+    platform.delete_file = (path: string) -> success: bool {
+        return File.file_delete(path);
+    }
+
+    platform.make_directory = (path: string) -> success: bool {
+        return File.make_directory_if_it_does_not_exist(path);
+    }
+    platform.delete_directory = (path: string) -> success: bool {
+        return File.delete_directory(path);
+    }
+    platform.list_directory = (path: string, recursive: bool, files: bool, directories: bool) -> [] Editor.File_Info /* context.allocator */ {
+        compare_file_infos :: (a: Editor.File_Info, b: Editor.File_Info) -> s64 {
+            return compare_strings(a.absolute_path, b.absolute_path);
+        }
+
+        file_infos: [..] Editor.File_Info;
+
+        visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] Editor.File_Info) {
+            file_info := array_add(userdata);
+            file_info.name          = copy_string(visit_info.short_name);
+            file_info.absolute_path = copy_string(visit_info.full_name);
+            file_info.size          = visit_info.size;
+
+            file_info.modification_time = visit_info.modification_time;
+
+            file_info.is_symlink   = visit_info.is_symlink;
+            file_info.is_directory = visit_info.is_directory;
+        }
+
+        File_Utilities.visit_files(path, recursive, *file_infos, visitor,
+                                   visit_files = files,
+                                   visit_directories = directories,
+                                   visit_symlinks = true,
+                                   follow_directory_symlinks = true);
+
+        // The entries are definitely not sorted on macOS. MSDN says that they are not
+        // necessarily sorted on Windows either (although they are sorted in practice?)
+        // Maybe we could omit the sort on Windows?
+        //
+        // Also, beware stack overflow for large directories. There's a tailcall version
+        // of quicksort, but this ain't it.
+        quick_sort(file_infos, compare_file_infos);
+
+        return file_infos;
+    }
+    // WARNING: Do not override context allocator here when calling. Resources for watching are
+    // allocated with a general-purpose allocator here for now.
+    //
+    // TODO(jt): @Cleanup It would be better if we had a arena/pool for these so that we would be resistant to changes to context?
+    platform.watch_directory = (_path: string) -> success: bool {
+        path := String.trim_right(_path, "/");
+
+        #if OS == .WINDOWS {
+            for platform_state.watched_directories {
+                if it.info.path == path {
+                    log("Reusing handles for watching path: %", path);
+                    return true;
+                }
+            }
+
+            log("Creating resources for watching path: %", path);
+
+            event_handle := CreateEventW(null, FALSE, FALSE, null);
+            if event_handle == null {
+                return false;
+            }
+
+            directory_handle := CreateFileW(utf8_to_wide(path,, temp), FILE_LIST_DIRECTORY,
+                                            FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE,
+                                            null,
+                                            OPEN_EXISTING,
+                                            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+                                            null);
+
+            if directory_handle == INVALID_HANDLE_VALUE {
+                error_code, description := System.get_error_value_and_string();
+                log_error("watch_directory encountered an error in CreateFileW: %, %", error_code, description);
+
+                CloseHandle(event_handle);
+                return false;
+            }
+
+            info := New(Platform_State.Watched_Directory_Info); // :Malloc
+            info.path = copy_string(path);                      // :Malloc
+            info.directory_handle = directory_handle;
+            info.overlapped.hEvent = event_handle;
+            info.overlapped.Offset = 0;
+
+            String.path_overwrite_separators(info.path, #char "/");
+
+            watched_directory := array_add(*platform_state.watched_directories);
+            watched_directory.info = info;
+
+            issue_one_read(watched_directory.info);
+        } else #if OS == .MACOS {
+            for platform_state.watched_directories {
+                if it.path == path {
+                    log("Reusing event stream for path: %", path);
+                    return true;
+                }
+            }
+
+            log("Creating and starting event stream for path: %", path);
+
+            paths_to_watch: CFArrayRef;
+            {
+                cfstring_path: CFStringRef = CFStringCreateWithBytes(null, path.data, path.count, .UTF8, false);
+                cfarray_paths: CFArrayRef  = CFArrayCreate(null, cast(**void, *cfstring_path), 1, *kCFTypeArrayCallBacks);
+
+                paths_to_watch = cfarray_paths;
+            }
+
+            event_stream := FSEventStreamCreate(null, event_stream_callback, null, paths_to_watch,
+                                                kFSEventStreamEventIdSinceNow,
+                                                to_float64_seconds(Editor.FILE_WATCH_BLIND_WINDOW),
+                                                kFSEventStreamCreateFlagFileEvents);
+
+            FSEventStreamScheduleWithRunLoop(event_stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+            FSEventStreamStart(event_stream);
+
+            watched_directory := array_add(*platform_state.watched_directories);
+            watched_directory.path = copy_string(path); // :Malloc
+            watched_directory.event_stream = event_stream;
+
+            return true;
+        }
+
+        return false;
+    }
+    // WARNING: Do not override context allocator here when calling. Resources for watching are
+    // allocated with a general-purpose allocator here for now.
+    platform.unwatch_directory = (path: string) {
+        #if OS == .WINDOWS {
+            for platform_state.watched_directories {
+                log("Cancelling overlapped IO and releasing resources for watching path: %", path);
+
+                CancelIo(it.info.directory_handle);
+                CloseHandle(it.info.overlapped.hEvent);
+                CloseHandle(it.info.directory_handle);
+
+                free(it.info.path);
+                free(it.info);
+
+                remove it;
+            }
+        } else #if OS == .MACOS {
+            for platform_state.watched_directories {
+                if it.path == path {
+                    log("Stopping and releasing event stream for watching path: %", path);
+
+                    FSEventStreamStop(it.event_stream);
+                    FSEventStreamInvalidate(it.event_stream); // Remove stream from all run loops
+                    FSEventStreamRelease(it.event_stream);
+
+                    free(it.path);
+                    remove it;
+                }
+            }
+        }
+    }
+
+    platform.get_clipboard_text = () -> string {
+        return Clipboard.os_clipboard_get_text();
+    }
+    platform.set_clipboard_text = (text: string) {
+        Clipboard.os_clipboard_set_text(text);
+    }
+
+    renderer: Editor.Renderer;
+    renderer.create_texture_r8unorm    = renderer_create_texture_r8unorm;
+    renderer.create_texture_rgba8unorm = renderer_create_texture_rgba8unorm;
+    renderer.update_texture_r8unorm    = renderer_update_texture_r8unorm;
+    renderer.update_texture_rgba8unorm = renderer_update_texture_rgba8unorm;
+    renderer.begin_frame               = renderer_begin_frame;
+    renderer.submit_frame              = renderer_submit_frame;
+    renderer.draw                      = renderer_draw;
+
+    _, _, window_width, window_height := Window.get_dimensions(window, right_handed = false);
+
+    input: Editor.Input;
+    input.data_path   = data_path;
+    input.log_path    = log_path;
+    input.config_path = config_path;
+    // input.time and input.dtime are zeroed.
+    input.time_of_program_start = time_of_program_start;
+    // input.frame_requested_by_editor is zeroed.
+    // TODO(jt): @Incomplete update this when we switch windows.
+    input.monitor_refresh_rate = platform_get_monitor_refresh_rate(window);
+
+    input.window_size = { window_width, window_height };
+    input.window_scale_factor = platform_get_window_scale_factor(window);
+
+    mouse_x, mouse_y, success := Window.get_mouse_pointer_position();
+    if success {
+        input.mouse_position = { cast(f32, mouse_x), cast(f32, mouse_y) };
+    }
+    // input.mouse_wheel_delta is zeroed.
+    // input.watched_directory_changes is zeroed.
+    // input.events is zeroed.
+
+    editor: Editor.Editor;
+    Editor.init(*editor, platform, renderer, input);
+
+    time_of_last_frame_start := time_of_program_start;
+
+    input.previous_frame_profile_time_scale = profiler_end_frame(); // End of "init"
+
+    should_run  := true;
+    while should_run {
+        frame_zones, frame_zone_labels := profiler_get_zones(.INCLUSIVE_TIME,, temp);
+        input.previous_frame_profile_zones       = frame_zones;
+        input.previous_frame_profile_zone_labels = frame_zone_labels;
+        // input.previous_frame_time_scale got written on the previous frame.
+
+        profiler_start_frame("frame");
+
+        time_of_frame_start := current_time_monotonic();
+        time_since_program_start := time_of_frame_start - time_of_program_start;
+
+        dtime := time_of_frame_start - time_of_last_frame_start;
+
+        input.time = time_since_program_start;
+        input.dtime = dtime;
+
+        input_events: [..] Editor.Input_Event;
+        input_events.allocator = temp;
+
+        Input.update_window_events();
+        for Input.get_window_resizes() {
+            renderer_update(it.window);
+
+            if it.window == window {
+                input.window_size = { it.width, it.height };
+            }
+        }
+
+        scale_factor := platform_get_window_scale_factor(window);
+        // TODO(jt): @Cleanup The way the Windows Input module handles the .QUIT event (WM_QUIT)
+        // causes the window to be destroyed before we are done with our last frame, and thus
+        // the scale_factor becomes 0. This confuses the font system inside the editor.
+        #if OS == .WINDOWS {
+            if scale_factor != 0.0 {
+                input.window_scale_factor = scale_factor;
+            }
+        }
+
+        // modules/Input only sends modifier keys for KEYBOARD events, but we want to send them for CODEPOINT
+        // events (somewhat corresponding to TEXT_INPUT). For this reason, we track the latest state here,
+        // and modify it for when handling KEYBOARD.
+        modifiers: Editor.Modifier_Flags;
+
+        for Input.events_this_frame {
+            if it.type == {
+                case .QUIT; {
+                    should_run = false;
+                }
+
+                // TODO(jt): On macOS at least, we are missing combined accented characters, like 'e -> = é
+                case .KEYBOARD; {
+                    #if OS == .WINDOWS {
+                        if it.alt_pressed && it.key_code == .F4 {
+                            should_run = false;
+                            continue;
+                        }
+                    }
+
+                    // See comment above the declaration of modifiers.
+                    if it.ctrl_pressed      modifiers |= .CTRL;   else modifiers &= ~.CTRL;
+                    if it.alt_pressed       modifiers |= .ALT;    else modifiers &= ~.ALT;
+                    if it.shift_pressed     modifiers |= .SHIFT;  else modifiers &= ~.SHIFT;
+                    if it.cmd_meta_pressed  modifiers |= .META;   else modifiers &= ~.META;
+
+                    flags: Editor.Input_Event.Flags;
+                    if it.key_pressed  flags |= .PRESSED;
+                    if it.repeat       flags |= .REPEAT;
+
+                    // The Input module's key_codes mirror ASCII in that range. However, for
+                    // control characters outside of the ASCII range we use our own enum.
+                    if it.key_code == {
+                        // keycodes that are also in ASCII
+                        case .BACKSPACE;            array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.BACKSPACE) });
+                        case .TAB;                  array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.TAB) });
+                        case .LINEFEED;             array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.LINEFEED) });
+                        case .ENTER;                array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.ENTER) });
+                        case .ESCAPE;               array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.ESCAPE) });
+                        // SPACEBAR also gets sent as a text event, so we don't capture it here.
+                        case .DELETE;               array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, Editor.Codepoint.DELETE) });
+
+                        // keycodes that are not in ASCII
+                        case .CTRL;                 array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.CTRL) });
+                        case .ALT;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.ALT) });
+                        case .SHIFT;                array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.SHIFT) });
+                        case .META;                 array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.META) });
+
+                        case .ARROW_UP;             array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.ARROW_UP) });
+                        case .ARROW_DOWN;           array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.ARROW_DOWN) });
+                        case .ARROW_LEFT;           array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.ARROW_LEFT) });
+                        case .ARROW_RIGHT;          array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.ARROW_RIGHT) });
+
+                        case .PAGE_UP;              array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.PAGE_UP) });
+                        case .PAGE_DOWN;            array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.PAGE_DOWN) });
+
+                        case .HOME;                 array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.HOME) });
+                        case .END;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.END) });
+
+                        case .INSERT;               array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.INSERT) });
+
+                        case .F1;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F1) });
+                        case .F2;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F2) });
+                        case .F3;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F3) });
+                        case .F4;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F4) });
+                        case .F5;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F5) });
+                        case .F6;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F6) });
+                        case .F7;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F7) });
+                        case .F8;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F8) });
+                        case .F9;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F9) });
+                        case .F10;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F10) });
+                        case .F11;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F11) });
+                        case .F12;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F12) });
+
+                        case .PRINT_SCREEN;         array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.PRINT_SCREEN) });
+
+                        case .MOUSE_BUTTON_LEFT;    array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.MB_LEFT) });
+                        case .MOUSE_BUTTON_RIGHT;   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.MB_RIGHT) });
+                        case .MOUSE_BUTTON_MIDDLE;  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.MB_MIDDLE) });
+
+                        case; {
+                            // TODO(jt): @Cleanup @Hack On Windows, holding down control suppresses the text event,
+                            // so we emit it here. This is a temporary hack. We should eventually rewrite the
+                            // platform layers and do the minimal necessary hacks there.
+
+                            if it.ctrl_pressed && it.text_input_count == 0 {
+                                array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, it.key_code) });
+                            }
+                        }
+                    }
+                }
+
+                case .TEXT_INPUT; {
+                    // TODO(jt): @Cleanup On macOS, Alt + key usually remaps the codepoint in the text
+                    // event into an exotic character, but for us it is important to
+                    // have Alt be part of keyboard shortcuts. For this reason, we
+                    // modified modules/Input to ignore modifiers when extracting the
+                    // text event characters. See :ModifiedInputModule.
+
+                    flags: Editor.Input_Event.Flags;
+                    flags |= .PRESSED; // TEXT_INPUT implies key_pressed.
+
+                    array_add(*input_events, { .CODEPOINT, flags, modifiers, it.utf32 });
+                }
+            }
+        }
+
+        mouse_x, mouse_y, success := Window.get_mouse_pointer_position();
+        if success {
+            input.mouse_position = { cast(f32, mouse_x), cast(f32, mouse_y) };
+        }
+        input.mouse_wheel_delta = Input.mouse_delta_z;
+
+        platform_process_watched_directory_changes();
+
+        input.watched_directory_changes = platform_state.watched_directory_changes;
+        input.events = input_events;
+
+        _, wants_next_frame := Editor.update_and_render(*editor, platform, renderer, input);
+
+        input.frame_requested_by_editor = wants_next_frame;
+
+        input.previous_frame_profile_time_scale = profiler_end_frame(); // End of "frame"
+        // The zones are transferred at the beginnning of the next frame, to survive reset_temporary_storage.
+
+        array_reset_keeping_memory(*platform_state.watched_directory_changes);
+        reset_temporary_storage();
+
+        #if DEBUG_MEMORY {
+            // memory_visualizer_per_frame_update();
+
+            options: Leak_Report_Options;
+            report := make_leak_report(options);
+
+            // log_leak_report always prints something, but we don't want to spam the logs,
+            // so let's only print once in a while, if we have something to print.
+            leak_bytes_total: s64;
+            leaks_total:      s64;
+            for summary: report.sorted_summaries {
+                leak_bytes_total += summary.bytes;
+                leak_bytes_total += summary.child_bytes;
+
+                leaks_total += summary.count;
+                leaks_total += summary.child_count;
+            }
+
+            if leak_bytes_total || leaks_total {
+                if time_of_frame_start - time_of_last_leak_report > DEBUG_MEMORY_LEAK_REPORT_PERIOD {
+                    time_of_last_leak_report = time_of_frame_start;
+
+                    log("-- START OF LEAK REPORT --");
+                    log_leak_report(report, options);
+                    log("-- END OF LEAK REPORT --");
+                }
+            }
+
+            deinit(*report);
+        }
+
+        time_of_last_frame_start = time_of_frame_start;
+
+        if should_run {
+            // :BatterySaver
+            //
+            // For various reasons we can't always count on V-sync and render queue depth to pace us.
+            //
+            // (For one, we'd like to be low-latency, and will try to enable mailbox presentation, etc.)
+            // However, this means that we could have gotten through the frame really fast, and would
+            // start the next one as soon as there are events in our message queue (which there are if the
+            // mouse is being moved, for instance).
+            //
+            // For this reason, we also manually sleep here, approximately until the next frame should start.
+            //
+            // However, on Windows specifically, the default sleep timer is really coarse grained (around 15 ms).
+            // A quick hack is timeBeginPeriod, but that brings problems on its own: it affects
+            // scheduler efficiency and power-consumption, but also is either completely global to all apps,
+            // or global to all apps that opted into timeBeginPeriod by picking the most precise thing.
+            //
+            // The better solution is CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, but that only arrived in
+            // Windows 10, version 1803. We should probably detect and do that if possible.
+            //
+            // UPDATE: This is also not really tested without VSync. Maybe it is a bad idea and we should
+            // always just wait on some kind of presentation fence. I don't know.
+            //
+            //   -jt, 26 August 2026
+
+            time_of_frame_end := current_time_monotonic();
+
+            seconds_since_frame_start := to_float64_seconds(time_of_frame_end - time_of_frame_start);
+            target_frame_seconds      := 1.0 / input.monitor_refresh_rate;
+
+            remainder_millis := cast(s32, floor((target_frame_seconds - seconds_since_frame_start) * 1000.0));
+            sleep_millis     := max(remainder_millis - SCHEDULER_PRECISION_MILLIS, 0);
+            if sleep_millis {
+                sleep_milliseconds(sleep_millis);
+            }
+
+            if !wants_next_frame {
+                platform_wait_for_events();
+            }
+        }
+    }
+
+    log("Shutting down");
+}
+
+//
+// Platform
+//
+
+Platform_State :: struct {
+    watched_directory_changes: [..] Editor.Watched_Directory_Change; // :Malloc
+    watched_directories:       [..] Watched_Directory;               // :Malloc
+
+    #if OS == .WINDOWS {
+        Watched_Directory :: struct {
+            // The actual data is behind a pointer so that the overlapped structure and the notify
+            // buffer are pointer stable and safe against resizes of the watched_directories array.
+            info: *Watched_Directory_Info; // :Malloc
+        }
+
+        Watched_Directory_Info :: struct {
+            path: string; // :Malloc
+            directory_handle: HANDLE;
+            overlapped: OVERLAPPED;
+
+            read_issue_failed: bool;
+
+            // Unlike modules/File_Watcher, the buffer is inline, so we must be careful about it being pointer-stable!
+            // Additionally, we must make sure to align it manually, otherwise ReadDirectoryChangesW fails silently.
+            notify_buffer: [NOTIFY_BUFFER_SIZE] u8  #align 16;
+
+            NOTIFY_BUFFER_SIZE :: 4096;
+        }
+    } else #if OS == .MACOS {
+        Watched_Directory :: struct {
+            path: string; // :Malloc
+            event_stream: FSEventStreamRef;
+        }
+    }
+}
+
+platform_state: Platform_State;
+
+platform_wait_for_events :: () {
+    #if OS == .WINDOWS {
+        WaitMessage();
+    } else #if OS == .MACOS {
+        NSApplication.nextEventMatchingMask(NSApp, NSEventMaskAny, NSDate.distantFuture(), NSDefaultRunLoopMode, NO);
+    }
+}
+
+platform_get_window_scale_factor :: (window: Window.Window_Type) -> f32 {
+    #if OS == .WINDOWS {
+        return cast(f32, GetDpiForWindow(window)) / 96.0;
+    } else #if OS == .MACOS {
+        // backingScaleFactor is only tells us, if we are on a Retina display (by returning 2.0),
+        // but it doesn't tell us what scaling the user has picked. Still, we can use it to
+        // approximate how large we want things to be. Maybe there is a better solution?
+        return cast(f32, window.backingScaleFactor(window));
+    }
+
+    return 1.0;
+}
+
+platform_get_monitor_refresh_rate :: (window: Window.Window_Type) -> s64 {
+    #if OS == .WINDOWS {
+        monitor := MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+        monitor_info: MONITORINFOEXA;
+        monitor_info.cbSize = size_of(type_of(monitor_info));
+
+        success := GetMonitorInfoA(monitor, *monitor_info);
+        if success {
+            mode: DEVMODEA;
+            mode.dmSize = size_of(type_of(mode));
+
+            success = EnumDisplaySettingsA(cast(*u8, *monitor_info.szDevice), ENUM_CURRENT_SETTINGS, *mode);
+            if success {
+                return mode.dmDisplayFrequency;
+            }
+        }
+    } else #if OS == .MACOS {
+        // TODO(jt): @Incomplete Query macOS refresh rate...
+        /* Thanks, winit!
+
+        let current_display_mode = NativeDisplayMode(CGDisplayCopyDisplayMode(self.display_id()) as _);
+        let refresh_rate = ffi::CGDisplayModeGetRefreshRate(current_display_mode.0);
+        if refresh_rate > 0.0 {
+            return Some((refresh_rate * 1000.0).round() as u32);
+        }
+        */
+    }
+
+    return 60;
+}
+
+platform_process_watched_directory_changes :: () {
+    #if OS == .WINDOWS {
+        advance_notify_info :: (info: *FILE_NOTIFY_INFORMATION) -> *FILE_NOTIFY_INFORMATION {
+            if info.NextEntryOffset == 0 {
+                return null;
+            }
+
+            return cast(*FILE_NOTIFY_INFORMATION, cast(*u8, info) + info.NextEntryOffset);
+        }
+
+        for * platform_state.watched_directories {
+            if it.info.read_issue_failed {
+                it.info.read_issue_failed = false;
+                issue_one_read(it.info);
+
+                // If the read failed again immediately, we'll try again next time.
+                if it.info.read_issue_failed {
+                    continue;
+                }
+            }
+
+            if !HasOverlappedIoCompleted(it.info.overlapped) {
+                continue;
+            }
+
+            bytes_transferred: s32;
+            success := GetOverlappedResult(it.info.directory_handle, *it.info.overlapped, *bytes_transferred, FALSE);
+            if success {
+                log("% bytes transferred into notify buffer for watching directory %", bytes_transferred, it.info.path);
+            }
+
+            defer issue_one_read(it.info); // Note that we can miss events until the overlapped read gets set up again. It is fine.
+
+            if !success {
+                continue;
+            }
+
+            if bytes_transferred == 0 {
+                // The changes buffer overflowed. Add full rescan event for the whole directory.
+                change := array_add(*platform_state.watched_directory_changes);
+                change.path = copy_string(it.info.path,, temp);
+                change.flags |= .MODIFIED | .NEED_FULL_CHILDREN_SCAN;
+
+                continue;
+            }
+
+            notify_info := cast(*FILE_NOTIFY_INFORMATION, it.info.notify_buffer.data);
+            while notify_info != null {
+                defer notify_info = advance_notify_info(notify_info);
+
+                flags: Editor.Watched_Directory_Change.Flags;
+                if notify_info.Action == {
+                    case FILE_ACTION_ADDED;             flags = .ADDED;
+                    case FILE_ACTION_REMOVED;           flags = .REMOVED;
+                    case FILE_ACTION_MODIFIED;          flags = .MODIFIED;
+                    case FILE_ACTION_RENAMED_OLD_NAME;  flags = .MOVED | .MOVED_FROM;
+                    case FILE_ACTION_RENAMED_NEW_NAME;  flags = .MOVED | .MOVED_TO;
+                    case;                               continue;
+                }
+
+                filename_data  := cast(*u16, notify_info.FileName.data);
+                filename_count := notify_info.FileNameLength / 2; // FileNameLength is in bytes.
+
+                path, success := wide_to_utf8(filename_data, filename_count,, temp);
+                if !success {
+                    continue;
+                }
+
+                String.path_overwrite_separators(path, #char "/");
+                full_path := tprint("%/%", it.info.path, path);
+
+                if flags & .MODIFIED && File_Utilities.is_directory(full_path) {
+                    // TODO(jt): @Audit From modules/File_Watcher:
+                    //
+                    // Window's doesn't seem to issue the right events when things are renamed or moved.
+                    // Instead it issues a "MODIFIED" event for the parent directory that the change occurred in.
+                    flags |= .NEED_FULL_CHILDREN_SCAN;
+                }
+
+                change := array_add(*platform_state.watched_directory_changes);
+                change.path = full_path;
+                change.flags |= flags;
+            }
+        }
+    } else #if OS == .MACOS {
+        // Unlike modules/File_Watcher, we actually don't need to call this, because
+        // (presumably) AppKit calls this for us, which in turn calls event_stream_callback.
+        // I wish I understood the Apple ecosystem.
+        //
+        // CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, false);
+    }
+}
+
+#if OS == .WINDOWS {
+    issue_one_read :: (info: *Platform_State.Watched_Directory_Info) {
+        NOTIFY_FILTER: s32 : FILE_NOTIFY_CHANGE_FILE_NAME
+        | FILE_NOTIFY_CHANGE_DIR_NAME
+        | FILE_NOTIFY_CHANGE_CREATION
+        | FILE_NOTIFY_CHANGE_SIZE
+        | FILE_NOTIFY_CHANGE_LAST_WRITE
+        | FILE_NOTIFY_CHANGE_SECURITY
+        | FILE_NOTIFY_CHANGE_ATTRIBUTES;
+
+        success := ReadDirectoryChangesW(info.directory_handle,
+                                         info.notify_buffer.data, info.notify_buffer.count,
+                                         /* bWatchSubtree could also be FALSE */ TRUE, NOTIFY_FILTER,
+                                         null, *info.overlapped, null);
+
+        if !success {
+            info.read_issue_failed = true;
+
+            error_code, description := System.get_error_value_and_string();
+            log_error("ReadDirectoryChangesW failed for directory %: %, %", info.path, error_code, description);
+        }
+    }
+} else #if OS == .MACOS {
+    event_stream_callback :: (streamRef: FSEventStreamRef, clientCallBackInfo: *void, numEvents: u64, eventPaths: *void, eventFlags: *FSEventStreamEventFlags, eventIds: *FSEventStreamEventId) #c_call {
+        FS_ATTRIBUTE_CHANGES :: kFSEventStreamEventFlagChangeOwner | kFSEventStreamEventFlagItemInodeMetaMod | kFSEventStreamEventFlagItemFinderInfoMod;
+
+        // push_context and set temporary storage, because we copy_string with temp below.
+        // This callback *should* run on the main thread. You can verify this with:
+        //
+        // assert(main_thread == pthread_self()); // Get main_thread at the start of the program.
+        push_context {
+            context.temporary_storage = main_thread_temporary_storage;
+
+            event_paths := cast(**u8, eventPaths);
+            for 0..numEvents - 1 {
+                event_flags := eventFlags[it];
+                event_id    := eventIds[it];
+                event_path  := to_string(event_paths[it]);
+
+                flags: Editor.Watched_Directory_Change.Flags;
+                if event_flags & kFSEventStreamEventFlagItemCreated      flags |= .ADDED;
+                if event_flags & kFSEventStreamEventFlagItemRemoved      flags |= .REMOVED;
+                if event_flags & kFSEventStreamEventFlagItemModified     flags |= .MODIFIED;
+                if event_flags & FS_ATTRIBUTE_CHANGES                    flags |= .ATTRIBUTES_CHANGED;
+
+                if event_flags & kFSEventStreamEventFlagItemRenamed      flags |= .MOVED;
+                if event_flags & kFSEventStreamEventFlagMustScanSubDirs  flags |= .NEED_FULL_CHILDREN_SCAN;
+
+                if !flags {
+                    continue;
+                }
+
+                if event_flags & kFSEventStreamEventFlagItemIsDir && event_flags & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed) {
+                    flags |= .NEED_FULL_CHILDREN_SCAN;
+                }
+
+                change := array_add(*platform_state.watched_directory_changes);
+                change.path = copy_string(event_path,, temp); // event_path will be deallocated by the kernel once the callback returns, so we want our own copy.
+                change.flags = flags;
+            }
+        }
+    }
 }
