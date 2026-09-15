@@ -219,7 +219,9 @@ PANEL_SCROLL_PADDING_CELLS_Y :: 5;    // TODO(jt): Make this configurable. :Conf
 
 MINI_PANEL_LINES :: 10;   // TODO(jt): Make this configurable. :Config
 
-STRIP_TRAILING_WHITESPACE_ON_SAVE :: true; // TODO(jt): Make this configurable. :Config
+// TODO(jt): To not destroy formatting/CRLF-ness of files created by others, we need a version of this that only
+// strips modified lines or something like that. Until then this is turned off.
+STRIP_WHITESPACE_ON_SAVE :: false; // TODO(jt): Make this configurable. :Config
 
 PANEL_SCROLL_DURATION:                  f32 : 0.15; // TODO(jt): Make this configurable. :Config
 CURSOR_FLASH_DURATION:                  f32 : 0.50; // TODO(jt): Make flash time configurable. :Config
@@ -2355,7 +2357,7 @@ Document_Action :: enum {
 
     TOGGLE_READONLY;
 
-    STRIP_TRAILING_WHITESPACE;
+    STRIP_WHITESPACE;
 
     LANGUAGE_TEXT;
     LANGUAGE_C;
@@ -2911,8 +2913,8 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 if !document.backing_file_exists || document.flags & .MODIFIED {
                     buffer := *document.buffer;
 
-                    if STRIP_TRAILING_WHITESPACE_ON_SAVE {
-                        strip_trailing_whitespace(view);
+                    if STRIP_WHITESPACE_ON_SAVE {
+                        strip_whitespace(view);
                     }
 
                     ensure_directory(editor, platform, document.backing_directory_path);
@@ -3434,10 +3436,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
-        case .STRIP_TRAILING_WHITESPACE; {
+        case .STRIP_WHITESPACE; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
             if !(document.flags & .READONLY) {
-                buffer_changed |= strip_trailing_whitespace(view);
+                buffer_changed |= strip_whitespace(view);
             }
         }
 
@@ -5502,7 +5504,7 @@ panel_set_listing :: (panel: *Panel, editor: Editor, listing: *Listing) {
     listing.time_of_last_activation = editor.input_state.time;
 }
 
-strip_trailing_whitespace :: (view: *Document_View) -> buffer_changed: bool {
+strip_whitespace :: (view: *Document_View) -> buffer_changed: bool {
     document := view.document;
 
     trimmed := false;

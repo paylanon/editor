@@ -921,9 +921,7 @@ text_buffer_delete_line :: (buffer: *Text_Buffer, cursors: *Text_Cursors) -> str
 text_buffer_trim_line :: (buffer: *Text_Buffer, cursors: *Text_Cursors, undo_modifier := Undo_Modifier.NONE, __line_gb_index: s64 = -1) -> changed: bool {
     ProfileZone("text_buffer_trim_line");
 
-    // TODO(jt): @Cleanup This was too slow for every save, and I want to keep sanity enabled for now.
-    // assert_valid(buffer, cursors);
-    assert_valid_cursors(buffer, cursors);
+    assert_valid(buffer, cursors);
 
     if undo_modifier == .OMIT {
         assert(buffer.edits.count == 0, "Omitting edits from history is only allowed before any edits are recorded.");
