@@ -69,8 +69,8 @@ TODO(jt): Roadmap:
 
 ... after alpha ...
 
-- [ ] C-: or double-click (expand region)
-- [ ] Triple click to select line. (expand to line)
+- [X] C-: or double-click (expand region)
+- [X] Triple click to select line. (expand to line)
 - [ ] Speed improvements to scope parsing
 - [ ] Speed improvements to lexing for syntax highlighting
 - [ ] C-u C-<space> (cursor undo)
