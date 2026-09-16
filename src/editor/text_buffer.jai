@@ -2294,6 +2294,27 @@ update_index_for_insert :: (buffer: *Text_Buffer, cursors: *Text_Cursors, _text:
                     return;
                 }
 
+                /* TODO(jt): @Bug We got a crash from a pre-0.0.1 version here. Unfortunately we can't have the file.
+                It looks like find_next_utf8_boundary crashes on something our previous checks omitted?
+                (line info is incrrect in string.jai, unfortunately)
+                
+                C:/Users/yanchith/workspace/editor/src/editor/string.jai:88,5: Assertion failed!
+
+                Stack trace:
+                'assertion_failed' at C:/Users/yanchith/workspace/editor/src/logger.jai:74
+                'assert_helper' at C:/Users/yanchith/workspace/jai/modules/Basic/module.jai:86
+                'find_next_utf8_char_boundary' at C:/Users/yanchith/workspace/editor/src/editor/string.jai:88
+                'update_index_for_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:2252
+                'text_buffer_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:330
+                'text_buffer_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:265
+                'open_file' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:4946
+                'confirm' at C:/Users/yanchith/workspace/editor/src/editor/mini_panel_open_file.jai:260
+                'route_event_to_mini_panel' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:2111
+                'update_and_render' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:917
+                'main' at C:/Users/yanchith/workspace/editor/src/main.jai:807
+                
+                */
+                
                 _, codepoint_advance_check := find_next_utf8_char_boundary(text, 0, sanity = false);
                 if codepoint_advance != codepoint_advance_check {
                     text_buffer_switch_to_binary_mode(buffer, cursors);
