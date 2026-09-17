@@ -14,6 +14,8 @@ Input :: struct {
 
     monitor_refresh_rate: s64; // 30, 60, 69, 120, 240, 420
 
+    window: Window_Type;
+    
     window_size: IVector2;
     window_scale_factor: f32;
 
@@ -161,6 +163,8 @@ Input_State :: struct {
     // this frame's input, and we don't have to pass it manually.
     time: Apollo_Time;
 
+    window: Window_Type;
+    
     window_size: IVector2;
     window_scale_factor: f32;
 
@@ -196,6 +200,8 @@ input_state_update_on_frame_start :: (input_state: *Input_State, input: Input) {
 
     input_state.time = input.time;
 
+    input_state.window = input.window;
+    
     input_state.window_size = input.window_size;
     input_state.window_scale_factor = input.window_scale_factor;
 

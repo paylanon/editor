@@ -137,10 +137,29 @@ f64 :: float64;
 #import "Bucket_Array";
 #import "Hash_Table";
 #import "Profiler";
+#import "Window_Creation";
 
 String  :: #import "String";
 Math    :: #import "Math";
 Unicode :: #import "Unicode";
+
+#if OS == .WINDOWS {
+    
+    #import "Windows";
+
+    Dwmapi :: #library,system "Dwmapi";
+    DwmSetWindowAttribute :: (hwnd: HWND, dwAttribute: DWORD, pvAttribute: *BOOL, cbAttribute: DWORD) -> HRESULT #foreign Dwmapi;
+
+    DWMWA_CAPTION_COLOR : u32 : 35;
+
+    COLORREF :: u32;
+    make_colorref :: (color: Vector4) -> COLORREF {
+        r := (color.x * 255).(u8).(u32);
+        g := (color.y * 255).(u8).(u32);
+        b := (color.z * 255).(u8).(u32);
+        return r | (g << 8) | (b << 16);
+    }
+}
 
 S64_MAX        :: Math.S64_MAX;
 Vector2        :: Math.Vector2;
@@ -4930,6 +4949,14 @@ change_theme :: (editor: *Editor, theme: string) {
                 color := ifx document.flags & .READONLY then editor.theme.cursor_color_readonly else editor.theme.cursor_color;
                 interpolation_init(*view.cursor_color, color);
             }
+        }
+        
+        #if OS == .WINDOWS {
+            // COLORREF_GRAY  :: 0x00424242;
+            // colorref := COLORREF_GRAY;
+            colorref := make_colorref(editor.theme.background_color);
+            log("COLORREF: %", formatInt(colorref, base=16));
+            set_caption := DwmSetWindowAttribute(editor.input_state.window, DWMWA_CAPTION_COLOR, xx *colorref, size_of(DWORD));
         }
     }
 }

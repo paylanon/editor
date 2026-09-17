@@ -166,11 +166,11 @@ Math           :: #import "Math";
 System         :: #import "System";
 File           :: #import "File";
 File_Utilities :: #import "File_Utilities";
-Window         :: #import "Window_Creation";
 Input          :: #import "Input";   // This is our modified version. See :ModifiedInputModule.
 Process        :: #import "Process"; // This is our modified version. See :ModifiedProcessModule.
 Clipboard      :: #import "Clipboard";
 Editor         :: #import,file "editor/editor.jai"()(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP, SANITY);
+Window         :: #import "Window_Creation";
 
 floor   :: Math.floor;
 Vector4 :: Editor.Vector4;
@@ -349,6 +349,7 @@ main :: () {
     }
 
     window := Window.create_window(1920, 1200, "editor");
+
     renderer_init(window);
 
     platform: Editor.Platform;
@@ -679,6 +680,8 @@ main :: () {
     // input.frame_requested_by_editor is zeroed.
     // TODO(jt): @Incomplete update this when we switch windows.
     input.monitor_refresh_rate = platform_get_monitor_refresh_rate(window);
+
+    input.window = window;
 
     input.window_size = { window_width, window_height };
     input.window_scale_factor = platform_get_window_scale_factor(window);
