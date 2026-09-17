@@ -166,11 +166,11 @@ Math           :: #import "Math";
 System         :: #import "System";
 File           :: #import "File";
 File_Utilities :: #import "File_Utilities";
+Window         :: #import "Window_Creation";
 Input          :: #import "Input";   // This is our modified version. See :ModifiedInputModule.
 Process        :: #import "Process"; // This is our modified version. See :ModifiedProcessModule.
 Clipboard      :: #import "Clipboard";
 Editor         :: #import,file "editor/editor.jai"()(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP, SANITY);
-Window         :: #import "Window_Creation";
 
 floor   :: Math.floor;
 Vector4 :: Editor.Vector4;

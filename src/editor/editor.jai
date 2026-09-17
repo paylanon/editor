@@ -2291,13 +2291,13 @@ Panel_Action :: enum {
     COMPILE_IN_DIRECTORY;
 
     // Things below could be in Global_Action, if we ever create it.
-    
-    SET_THEME;
 
     FONT_SIZE_INCREASE;
     FONT_SIZE_DECREASE;
     FONT_SUBPIXEL_RENDERING_ENABLE;
     FONT_SUBPIXEL_RENDERING_DISABLE;
+    
+    SET_THEME;
     
     RELOAD_CONFIG;
 
@@ -2796,15 +2796,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .FONT_SUBPIXEL_RENDERING_ENABLE;   font_reset_for_options(*editor.font, editor.font.pixel_height, editor.font.line_height_multiplier, true); editor_log(editor, "Subpixel rendering on");
         case .FONT_SUBPIXEL_RENDERING_DISABLE;  font_reset_for_options(*editor.font, editor.font.pixel_height, editor.font.line_height_multiplier, false); editor_log(editor, "Subpixel rendering off");
 
-        case .SET_THEME;                     open_mini_panel(editor, platform, input, mini_panel_set_theme_procs);
-        
-        // case .THEME_ABULAFIA;                   change_theme(editor, "abulafia");
-        // case .THEME_NAYSAYER;                   change_theme(editor, "naysayer");
-        // case .THEME_HANDMADE;                   change_theme(editor, "handmade");
-        // case .THEME_STB;                        change_theme(editor, "stb");
-        // case .THEME_ZENBURN;                    change_theme(editor, "zenburn");
-        // case .THEME_VISUAL_STUDIO_LIGHT;        change_theme(editor, "visual_studio_light");
-        // case .THEME_SOKOBAN;                    change_theme(editor, "sokoban");
+        case .SET_THEME;                        open_mini_panel(editor, platform, input, mini_panel_set_theme_procs);
         
         case .RELOAD_CONFIG;                    load_config(editor, platform, input, fall_back_to_emergency_config = false);
 
@@ -4953,10 +4945,7 @@ change_theme :: (editor: *Editor, theme: string) {
         }
         
         #if OS == .WINDOWS {
-            // COLORREF_GRAY  :: 0x00424242;
-            // colorref := COLORREF_GRAY;
             colorref := make_colorref(editor.theme.background_color);
-            log("COLORREF: %", formatInt(colorref, base=16));
             set_caption := DwmSetWindowAttribute(editor.input_state.window, DWMWA_CAPTION_COLOR, xx *colorref, size_of(DWORD));
         }
     }
