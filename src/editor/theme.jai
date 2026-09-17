@@ -49,6 +49,16 @@ Theme :: struct {
     invert_color_under_selected_listing_line: bool;
 }
 
+Builtin_Themes :: enum {
+    Abulafia;
+    Naysayer;
+    Handmade;
+    Stb;
+    Zenburn;
+    Visual_Studio_Light;
+    Sokoban;
+}
+
 abulafia_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0x50ffa0ff);
     text_color            := unpack_srgba(0xcdaa7dff);
@@ -335,6 +345,51 @@ visual_studio_light_theme :: () -> Theme {
     t.mini_panel_line_color      = selection_color;
     t.mini_panel_item_text_color = foreground_color;
     t.mini_panel_item_warning_text_color = keyword_color;
+
+    return t;
+}
+
+sokoban_theme :: () -> Theme {
+    cursor_color          := unpack_srgba(0xc9c9bfff);
+    text_color            := unpack_srgba(0xd4c7b4ff);
+    background_color      := unpack_srgba(0x111111ff);
+    keyword_color         := unpack_srgba(0xddddddff);
+
+    cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
+    cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
+
+    t: Theme;
+    t.cursor_color               = cursor_color;
+    t.cursor_color_hot           = { 1, 1, 1, 1 };
+    t.cursor_color_readonly      = { 1, 0, 0, 1 };
+    t.line_color                 = { 0, 0, 0, 0 };
+    t.selection_color            = unpack_srgba(0x5f5f6eff);
+    t.highlight_color            = cursor_minus_1;
+    t.highlight_color_active     = unpack_srgba(0xd09090c0);
+    t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
+    t.modeline_color             = unpack_srgba(0xc5c5c9ff);
+    t.modeline_color_active      = text_color;
+
+    t.background_color           = background_color;
+    t.separator_color            = unpack_srgba(0x000000ff);
+
+    t.listing_line_color               = cursor_minus_2;
+    t.listing_item_text_color          = text_color;
+    t.listing_item_text_color_marked   = keyword_color;
+    t.listing_item_text_variant_marked = .BOLD;
+
+    t.system_text_color    = unpack_srgba(0x000000ff);
+    t.text_color           = text_color;
+    t.keyword_color        = keyword_color;
+    t.attribute_color      = unpack_srgba(0x9bdfa5ff); // Jon also uses this for known types, like s8, bool, int.
+    t.directive_color      = unpack_srgba(0xc4c9bfff); // Jon also uses this for known types, like s8, bool, int.
+    t.string_literal_color = unpack_srgba(0x9bbfb6ff);
+    t.number_literal_color = unpack_srgba(0x92e5cfff); // Jon also uses this for boolean literals
+    t.comment_color        = unpack_srgba(0x869b85ff);
+
+    t.mini_panel_line_color      = cursor_minus_2;
+    t.mini_panel_item_text_color = text_color;
+    t.mini_panel_item_warning_text_color = unpack_srgba(0xe95410ff);
 
     return t;
 }

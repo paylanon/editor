@@ -208,6 +208,7 @@ operator==     :: Math.operator==;
 #load "mini_panel_switch_view.jai";
 #load "mini_panel_close_view.jai";
 #load "mini_panel_show_commands.jai";
+#load "mini_panel_set_theme.jai";
 #load "modal_interaction_search_and_replace.jai";
 #load "modal_interaction_go_to_line.jai";
 #load "modal_interaction_compile.jai";
@@ -2290,19 +2291,14 @@ Panel_Action :: enum {
     COMPILE_IN_DIRECTORY;
 
     // Things below could be in Global_Action, if we ever create it.
+    
+    SET_THEME;
 
     FONT_SIZE_INCREASE;
     FONT_SIZE_DECREASE;
     FONT_SUBPIXEL_RENDERING_ENABLE;
     FONT_SUBPIXEL_RENDERING_DISABLE;
-
-    THEME_ABULAFIA;
-    THEME_NAYSAYER;
-    THEME_HANDMADE;
-    THEME_STB;
-    THEME_ZENBURN;
-    THEME_VISUAL_STUDIO_LIGHT;
-
+    
     RELOAD_CONFIG;
 
     DEBUG_VIEW_ATLAS_TEXTURE;
@@ -2800,13 +2796,16 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .FONT_SUBPIXEL_RENDERING_ENABLE;   font_reset_for_options(*editor.font, editor.font.pixel_height, editor.font.line_height_multiplier, true); editor_log(editor, "Subpixel rendering on");
         case .FONT_SUBPIXEL_RENDERING_DISABLE;  font_reset_for_options(*editor.font, editor.font.pixel_height, editor.font.line_height_multiplier, false); editor_log(editor, "Subpixel rendering off");
 
-        case .THEME_ABULAFIA;                   change_theme(editor, "abulafia");
-        case .THEME_NAYSAYER;                   change_theme(editor, "naysayer");
-        case .THEME_HANDMADE;                   change_theme(editor, "handmade");
-        case .THEME_STB;                        change_theme(editor, "stb");
-        case .THEME_ZENBURN;                    change_theme(editor, "zenburn");
-        case .THEME_VISUAL_STUDIO_LIGHT;        change_theme(editor, "visual_studio_light");
-
+        case .SET_THEME;                     open_mini_panel(editor, platform, input, mini_panel_set_theme_procs);
+        
+        // case .THEME_ABULAFIA;                   change_theme(editor, "abulafia");
+        // case .THEME_NAYSAYER;                   change_theme(editor, "naysayer");
+        // case .THEME_HANDMADE;                   change_theme(editor, "handmade");
+        // case .THEME_STB;                        change_theme(editor, "stb");
+        // case .THEME_ZENBURN;                    change_theme(editor, "zenburn");
+        // case .THEME_VISUAL_STUDIO_LIGHT;        change_theme(editor, "visual_studio_light");
+        // case .THEME_SOKOBAN;                    change_theme(editor, "sokoban");
+        
         case .RELOAD_CONFIG;                    load_config(editor, platform, input, fall_back_to_emergency_config = false);
 
         case .DEBUG_VIEW_ATLAS_TEXTURE;         toggle_debug_view(editor, .ATLAS_TEXTURE);
@@ -4927,17 +4926,19 @@ load_config :: (editor: *Editor, platform: Platform, input: Input, fall_back_to_
     }
 }
 
-// TODO(jt): @Cleanup maybe we should define a Theme enum and a way to get that from a string for config?
 change_theme :: (editor: *Editor, theme: string) {
     theme_changed := false;
 
-    if theme == {
+    lowercase := String.to_lower_copy(theme,, temp);
+    
+    if lowercase == {
         case "abulafia";             editor.theme = abulafia_theme(); theme_changed = true;
         case "naysayer";             editor.theme = naysayer_theme(); theme_changed = true;
         case "handmade";             editor.theme = handmade_theme(); theme_changed = true;
         case "stb";                  editor.theme = stb_theme(); theme_changed = true;
         case "zenburn";              editor.theme = zenburn_theme(); theme_changed = true;
         case "visual_studio_light";  editor.theme = visual_studio_light_theme(); theme_changed = true;
+        case "sokoban";              editor.theme = sokoban_theme(); theme_changed = true;
     }
 
     if theme_changed {
