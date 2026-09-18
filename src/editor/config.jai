@@ -1,5 +1,16 @@
 CONFIG_VERSION :: 1;
 
+Global_Config :: struct {
+    
+    theme: string;
+    
+    panel_scroll_duration:                  f32 = 0.15;
+    cursor_flash_duration:                  f32 = 0.50;
+    cursor_anim_duration_keyboard_direct:   f32 = 0.00;
+    cursor_anim_duration_keyboard_indirect: f32 = 0.15;
+    cursor_anim_duration_mouse:             f32 = 0.15;
+}
+
 parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
     success := true;
 
@@ -16,8 +27,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
         editor_log(editor, "Invalid config version: % (supported is %)", version, CONFIG_VERSION);
         return false;
     }
-
-    config_theme: string;
+    
     config_keybinds_panel:       [..] Keybind_Pair(Panel_Action);
     config_keybinds_document:    [..] Keybind_Pair(Document_Action);
     config_keybinds_compilation: [..] Keybind_Pair(Compilation_Action);
@@ -68,13 +78,12 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                         editor_log(editor, "Failed to parse key-value pair on line %", lexer.line_index + 1);
                         return false;
                     }
+                    
+                    success = set_global_config_pair(*editor.config, key, value);
 
-                    if key == {
-                        case "theme";  config_theme = value;
-                        case; {
-                            editor_log(editor, "Unknown key on line %", lexer.line_index + 1);
-                            return false;
-                        }
+                    if !success {
+                        editor_log(editor, "Unknown key on line %", lexer.line_index + 1);
+                        return false;
                     }
                 }
 
@@ -115,8 +124,10 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
         }
     }
 
-    if config_theme.count {
-        change_theme(editor, config_theme);
+    log("%", editor.config);
+    
+    if editor.config.theme.count {
+        change_theme(editor, editor.config.theme);
     }
 
     // TODO(jt): By nuking everything from the keymaps, we may make the editor unusable, e.g. if the config misses keybinds for elementary things
@@ -347,6 +358,39 @@ parse_keybind_pair :: (lexer: *Config_Lexer) -> success: bool, shortcut: string,
     action   := String.trim(right);
 
     return true, shortcut, action;
+}
+
+set_global_config_pair :: (config: *Global_Config, key: string, value: string) -> success: bool {
+    
+    target_type: Type;
+    target_offset: s64;
+    
+    ti := Global_Config.(*Type_Info_Struct);
+    
+    for member: ti.members {
+        
+        if member.name == key {
+            target_type = (*member.type).(*Type).*;
+            target_offset = member.offset_in_bytes;
+        }
+    }
+    
+    if !target_type return false;
+
+    p := config.(*u8) + target_offset;
+    
+    if target_type == {
+        case string;
+            str_val := p.(*string);
+            str_val.* = value;
+            return true;
+        case f32;
+            float_val := p.(*f32);
+            success := String.scan2(value, "%;", float_val);
+            assert(success);
+            return true;
+        case; return false;
+    };
 }
 
 eat_line :: (lexer: *Config_Lexer) -> string {

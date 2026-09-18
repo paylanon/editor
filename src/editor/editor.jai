@@ -138,6 +138,7 @@ f64 :: float64;
 #import "Hash_Table";
 #import "Profiler";
 #import "Window_Creation";
+#import "Compiler";
 
 String  :: #import "String";
 Math    :: #import "Math";
@@ -243,12 +244,6 @@ MINI_PANEL_LINES :: 10;   // TODO(jt): Make this configurable. :Config
 // strips modified lines or something like that. Until then this is turned off.
 STRIP_WHITESPACE_ON_SAVE :: false; // TODO(jt): Make this configurable. :Config
 
-PANEL_SCROLL_DURATION:                  f32 : 0.15; // TODO(jt): Make this configurable. :Config
-CURSOR_FLASH_DURATION:                  f32 : 0.50; // TODO(jt): Make flash time configurable. :Config
-CURSOR_ANIM_DURATION_KEYBOARD_DIRECT:   f32 : 0.00; // TODO(jt): Make keyboard anim time configurable. :Config
-CURSOR_ANIM_DURATION_KEYBOARD_INDIRECT: f32 : 0.15; // TODO(jt): Make keyboard anim time configurable. :Config
-CURSOR_ANIM_DURATION_MOUSE:             f32 : 0.15; // TODO(jt): Make mouse anim time configurable. :Config
-
 THIN_CURSOR_WIDTH:          f32 : 2;
 THIN_CURSOR_WIDTH_INACTIVE: f32 : 1;
 
@@ -279,6 +274,8 @@ Editor :: struct {
     compilation_key_map: Key_Map(Compilation_Action);
     listing_key_map:     Key_Map(Listing_Action);
     theme: Theme;
+    
+    config: Global_Config;
 
     watched_files: [..] string;
 
@@ -2031,7 +2028,7 @@ sync_document_with_filesystem :: (editor: *Editor, platform: Platform, input: In
                                 if view.document == document {
                                     interpolation_start(*view.cursor_color,
                                                         editor.theme.cursor_color_hot, editor.theme.cursor_color_readonly,
-                                                        input.time, CURSOR_FLASH_DURATION);
+                                                        input.time, editor.config.cursor_flash_duration);
                                 }
                             }
                         }
@@ -2964,7 +2961,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
 
                         interpolation_start(*view.cursor_color,
                                             editor.theme.cursor_color_hot, editor.theme.cursor_color,
-                                            input.time, CURSOR_FLASH_DURATION);
+                                            input.time, editor.config.cursor_flash_duration);
 
 
                         if !document.backing_file_exists {
@@ -3018,7 +3015,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
 
                     interpolation_start(*view.cursor_color,
                                         editor.theme.cursor_color_hot, editor.theme.cursor_color,
-                                        input.time, CURSOR_FLASH_DURATION);
+                                        input.time, editor.config.cursor_flash_duration);
 
                     update_scopes(document);
                     document_update_tokens(document);
@@ -3457,14 +3454,14 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 } else {
                     interpolation_start(*view.cursor_color,
                                         editor.theme.cursor_color_hot, editor.theme.cursor_color,
-                                        input.time, CURSOR_FLASH_DURATION);
+                                        input.time, editor.config.cursor_flash_duration);
                     editor_log(editor, "% is now unlocked", document.backing_file_path);
                 }
             } else {
                 document.flags |= .READONLY_BECAUSE_OF_MANUAL_LOCK;
                 interpolation_start(*view.cursor_color,
                                     editor.theme.cursor_color_hot, editor.theme.cursor_color_readonly,
-                                    input.time, CURSOR_FLASH_DURATION);
+                                    input.time, editor.config.cursor_flash_duration);
 
                 editor_log(editor, "% is now locked (read-only)", document.backing_file_path);
             }
@@ -4163,13 +4160,13 @@ update_panel :: (editor: *Editor, platform: Platform, input: Input, panel: *Pane
                     target.x = scroll_to_rect.x0 - panel_w + drect_width(scroll_to_rect) + scroll_padding_x;
                     target.x = max(target.x, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 } else if scroll_to_rect.x0 < viewport_rect.x0 {
                     target := panel.scroll.target;
                     target.x = scroll_to_rect.x0 - scroll_padding_x;
                     target.x = max(target.x, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 }
 
                 if scroll_to_rect.y1 > viewport_rect.y1 {
@@ -4177,13 +4174,13 @@ update_panel :: (editor: *Editor, platform: Platform, input: Input, panel: *Pane
                     target.y = scroll_to_rect.y0 - panel_h + drect_height(scroll_to_rect) + scroll_padding_y;
                     target.y = max(target.y, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 } else if scroll_to_rect.y0 < viewport_rect.y0 {
                     target := panel.scroll.target;
                     target.y = scroll_to_rect.y0 - scroll_padding_y;
                     target.y = max(target.y, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 }
             }
 
@@ -4209,16 +4206,16 @@ update_panel :: (editor: *Editor, platform: Platform, input: Input, panel: *Pane
                 // UPDATE: Now we do the same for cursor flash animation.
                 if view.old_cursor != view.cursors.c0 {
                     anim_duration: f32 = 0.0;
-                    if view.flags & .RECEIVED_MOUSE_INTERACTION              anim_duration = max(anim_duration, CURSOR_ANIM_DURATION_MOUSE);
-                    if view.flags & .RECEIVED_INDIRECT_KEYBOARD_INTERACTION  anim_duration = max(anim_duration, CURSOR_ANIM_DURATION_KEYBOARD_INDIRECT);
-                    if view.flags & .RECEIVED_DIRECT_KEYBOARD_INTERACTION    anim_duration = max(anim_duration, CURSOR_ANIM_DURATION_KEYBOARD_DIRECT);
+                    if view.flags & .RECEIVED_MOUSE_INTERACTION              anim_duration = max(anim_duration, editor.config.cursor_anim_duration_mouse);
+                    if view.flags & .RECEIVED_INDIRECT_KEYBOARD_INTERACTION  anim_duration = max(anim_duration, editor.config.cursor_anim_duration_keyboard_indirect);
+                    if view.flags & .RECEIVED_DIRECT_KEYBOARD_INTERACTION    anim_duration = max(anim_duration, editor.config.cursor_anim_duration_keyboard_direct);
 
                     interpolation_start(*view.cursor_position, view.old_cursor_position, new_cursor_position, input.time, anim_duration);
                 }
 
                 if document.flags & (.MODIFIED_THIS_FRAME | .MODIFY_ATTEMPT_THIS_FRAME) {
                     color := ifx document.flags & .READONLY then editor.theme.cursor_color_readonly else editor.theme.cursor_color;
-                    interpolation_start(*view.cursor_color, editor.theme.cursor_color_hot, color, input.time, CURSOR_FLASH_DURATION);
+                    interpolation_start(*view.cursor_color, editor.theme.cursor_color_hot, color, input.time, editor.config.cursor_flash_duration);
                 }
 
                 interpolation_running := false;
@@ -4285,13 +4282,13 @@ update_panel :: (editor: *Editor, platform: Platform, input: Input, panel: *Pane
                     target.y = scroll_to_rect.y0 - panel_h + drect_height(scroll_to_rect) + scroll_padding_y;
                     target.y = max(target.y, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 } else if scroll_to_rect.y0 < viewport_rect.y0 {
                     target := panel.scroll.target;
                     target.y = scroll_to_rect.y0 - scroll_padding_y;
                     target.y = max(target.y, 0);
 
-                    interpolation_chain(*panel.scroll, target, input.time, PANEL_SCROLL_DURATION);
+                    interpolation_chain(*panel.scroll, target, input.time, editor.config.panel_scroll_duration);
                 }
             }
 
@@ -5784,7 +5781,7 @@ recenter_panel :: (panel: *Panel, editor: Editor, input: Input, force_center := 
     if skip_interpolation {
         interpolation_init(*panel.scroll, target);
     } else {
-        interpolation_start(*panel.scroll, panel.scroll.value, target, input.time, PANEL_SCROLL_DURATION);
+        interpolation_start(*panel.scroll, panel.scroll.value, target, input.time, editor.config.panel_scroll_duration);
     }
 }
 
