@@ -381,10 +381,10 @@ sokoban_theme :: () -> Theme {
     t.system_text_color    = unpack_srgba(0x000000ff);
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
-    t.attribute_color      = unpack_srgba(0x9bdfa5ff); // Jon also uses this for known types, like s8, bool, int.
-    t.directive_color      = unpack_srgba(0xc4c9bfff); // Jon also uses this for known types, like s8, bool, int.
+    t.attribute_color      = unpack_srgba(0xdac6abff);
+    t.directive_color      = unpack_srgba(0xc4c9bfff);
     t.string_literal_color = unpack_srgba(0x9bbfb6ff);
-    t.number_literal_color = unpack_srgba(0x92e5cfff); // Jon also uses this for boolean literals
+    t.number_literal_color = unpack_srgba(0x92e5cfff);
     t.comment_color        = unpack_srgba(0x869b85ff);
 
     t.mini_panel_line_color      = cursor_minus_2;

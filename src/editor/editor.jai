@@ -71,11 +71,11 @@ TODO(jt): Roadmap:
 
 - [X] C-: or double-click (expand region)
 - [X] Triple click to select line. (expand to line)
+- [ ] C-u C-<space> (cursor undo)
+- [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] Speed improvements to scope parsing
 - [ ] Speed improvements to lexing for syntax highlighting
-- [ ] C-u C-<space> (cursor undo)
 - [ ] M-q (reflow)
-- [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] q to hide compilation or listing
 - [ ] Mouse interaction in the mini panel (text selection, item clicking, item hover?)
 - [ ] Mouse interaction in the modal interaction (text selection)
@@ -1159,12 +1159,15 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
             }
 
             main_line := tprint("%%", action_text, line_view);
-
+            
+            // action_text_color := editor.theme.text_color;
+            action_text_color := editor.theme.directive_color;
+            
             scissor := Rect.{ mini_panel_x0, mini_panel_y, mini_panel_x1, window_h };
             _font_layout_and_draw_text(*editor.font, main_line,
                                        *render_commands, *atlas_update_regions,
                                        { mini_panel_x0, mini_panel_y }, scissor,
-                                       editor.theme.text_color, editor.theme.text_variant,
+                                       action_text_color, editor.theme.text_variant,
                                        .[], invert_ranges,
                                        binary = false);
 

@@ -36,20 +36,21 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
         search_parts, smartcase := line_search_prepare_parts(search_text,, temp);
         search_part1_char_count := ifx search_parts.count then count_utf8_chars(search_parts[0]) else 0;
 
-        max_time_of_last_activation: Apollo_Time;
-
-        current_thing: *void = null;
-
         for theme_name: enum_names(Builtin_Themes) {
 
-            // @TODO live preview?
+            found, found_indices := line_search(theme_name, search_parts, smartcase,, temp);
+            if found {
+                found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
             
-            x0 := count_utf8_chars(String.slice(theme_name, 0, it_index));
+                // @TODO live preview?
             
-            item := array_add(*mini_panel.items);
-            item.text = theme_name;
-            item.highlight_x0 = x0;
-            item.highlight_x1 = x0 + search_part1_char_count;
+                x0 := count_utf8_chars(String.slice(theme_name, 0, found_index));
+            
+                item := array_add(*mini_panel.items);
+                item.text = theme_name;
+                item.highlight_x0 = x0;
+                item.highlight_x1 = x0 + search_part1_char_count;
+            }
         }
 
         mini_panel.item_index = clamp(mini_panel.item_index, 0, mini_panel.items.count - 1);
