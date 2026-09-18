@@ -416,6 +416,8 @@ Document_View :: struct {
 
     cursors: Text_Cursors;
     selecting: bool;
+    
+    cursor_mark: Text_Location; // @TODO
 
     // Preserved at the start of each frame to find out if we want to kick off cursor animation, if
     // the cursor changed position due to input.
@@ -2139,7 +2141,23 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
             }
         }
 
-        case .CONFIRM;                 buffer_changed |= mp.procs.confirm(editor, platform, input);
+        case .CONFIRM; {
+
+            append_to_mini_panel_history(editor, platform, mp);
+        
+            buffer_changed |= mp.procs.confirm(editor, platform, input);
+        }
+        
+        case .NEXT_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, true);
+            buffer_changed = true;
+        }
+    
+        case .PREVIOUS_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, false);
+            buffer_changed = true;
+        }
+
         case .CANCEL_OR_STOP_SELECTING; {
             if mp.selecting {
                 text_cursors_join(*mp.cursors);
@@ -2470,7 +2488,10 @@ Mini_Panel_Action :: enum {
     COPY;
     CUT;
     PASTE;
-
+    
+    PREVIOUS_HISTORY_ELEMENT;
+    NEXT_HISTORY_ELEMENT;
+    
     CONFIRM;
     CANCEL_OR_STOP_SELECTING;
 }
@@ -3082,7 +3103,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         }
 
         case .GO_TO_LINE;       open_modal_interaction(editor, platform, input, modal_interaction_go_to_line_procs);
-
+        
         case .START_SELECTING;  view.selecting = true;  text_cursors_join(*view.cursors);
         case .STOP_SELECTING;   view.selecting = false; text_cursors_join(*view.cursors);
 
@@ -3604,8 +3625,8 @@ execute_compilation_action :: (editor: *Editor, platform: Platform, input: Input
             cursor_moved = true;
         }
 
-        case .START_SELECTING;              view.selecting = true;  text_cursors_join(*view.cursors);
-        case .STOP_SELECTING;               view.selecting = false; text_cursors_join(*view.cursors);
+        case .START_SELECTING;  view.selecting = true;  text_cursors_join(*view.cursors);
+        case .STOP_SELECTING;   view.selecting = false; text_cursors_join(*view.cursors);
 
         case .COPY; {
             view.selecting = false;
@@ -4794,12 +4815,96 @@ open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mi
     }
 }
 
+
+// @NOTE(payl): Searching by Mini_Panel_Procs to access history is obviously
+// kinda braindead. Maybe persistent mini-panels is the ideal approach?
+// In which case we skip string allocation too, in favor of views.
+
+mini_panel_history: [..] Mini_Panel_History;
+
+Mini_Panel_History :: struct {
+    procs_id: Mini_Panel_Procs;
+    elements: [..] string;
+    cursor: s64;
+}
+
+history_arena: *Arena;
+history_allocator: Allocator;
+
+append_to_mini_panel_history :: (editor: *Editor, platform: Platform, mini_panel: *Mini_Panel) {
+
+    if !mini_panel_history.count {
+        history_arena = make_arena(editor, platform, .MEDIUM, "Mini-Panel History");
+        history_allocator = arena_allocator(history_arena);
+    }
+    
+    // Stash executed string, if any, to history of this specific mini-panel.
+    executed_str := copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, history_allocator);
+    if executed_str {
+                
+        history_target: *Mini_Panel_History;
+                
+        for * mini_panel_history {
+            if !memcmp(*it.procs_id, *mini_panel.procs, size_of(Mini_Panel_Procs)) history_target = it;
+        }
+        
+        if !history_target {
+            array_add(*mini_panel_history, {procs_id=mini_panel.procs},, history_allocator);
+            history_target = peek_pointer(mini_panel_history);
+        }
+        
+        dupe := history_target.elements.count && (peek(history_target.elements) == executed_str);
+                
+        if !dupe array_add(*history_target.elements, executed_str,, history_allocator);
+                
+        history_target.cursor = history_target.elements.count;
+    }
+}
+
+walk_mini_panel_history :: (mini_panel: *Mini_Panel, forward: bool) {
+    
+    history_target: *Mini_Panel_History;
+    
+    for * mini_panel_history {
+        if !memcmp(*it.procs_id, *mini_panel.procs, size_of(Mini_Panel_Procs)) history_target = it;
+    }
+    
+    if history_target {
+        
+        if forward {
+            
+            history_target.cursor += 1;
+            history_target.cursor = min(history_target.cursor, history_target.elements.count);
+            if history_target.cursor == history_target.elements.count {
+                text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
+                return;
+            }
+            next := history_target.elements[history_target.cursor];
+            if history_target.cursor == history_target.elements.count {
+                text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
+                return;
+            }
+            text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
+            text_buffer_insert(*mini_panel.buffer, *mini_panel.cursors, next);
+            
+        } else {
+            
+            if !history_target.cursor return;
+            history_target.cursor -= 1;
+            prev := history_target.elements[history_target.cursor];
+            history_target.cursor = max(history_target.cursor, 0);
+            text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
+            text_buffer_insert(*mini_panel.buffer, *mini_panel.cursors, prev);
+        }
+    }
+}
+
 #scope_module
 
 close_mini_panel :: (editor: *Editor, platform: Platform, input: Input) {
     mini_panel := *editor.mini_panel;
     assert(mini_panel.open);
-
+    
     mini_panel.cursors.c0 = { 0, 0 };
     mini_panel.cursors.c1 = { 0, 0 };
     mini_panel.selecting = false;
