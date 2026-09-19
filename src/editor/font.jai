@@ -298,6 +298,7 @@ Font_Style_Range :: struct {
     using range: Font_Range;
     color: Vector4;
     variant: Font_Variant;
+    comment := false;
 }
 
 Font_Invert_Range :: struct {
@@ -348,6 +349,10 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
 
     current_line_index: s64 = 0;
     current_char_index: s64 = 0;
+    
+    comment_note: s64;
+    comment_todo: s64;
+    comment_tag:  s64;
 
     ITERATOR :: #ifx binary then string_bytes_iter else Unicode.utf8_iter;
     for :ITERATOR text {
@@ -387,6 +392,19 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
         glyph_variant := default_variant;
 
         style_range := maybe_advance_range_index_and_get_containing_range(*style_range_index, style_ranges, current_line_index, current_char_index);
+        
+        if style_range if style_range.comment {
+
+            if it == #char "T" if String.slice(text, it_index, 4) == "TODO" comment_todo = 4;
+            if it == #char "N" if String.slice(text, it_index, 4) == "NOTE" comment_note = 4;
+
+            if it == #char "@" || it == #char ":" {
+                substr := String.slice(text, it_index, text.count - it_index);
+                tag := String.stop_at_any(substr, String.DEFAULT_SPACES);
+                if tag.count > 1 comment_tag = tag.count;
+            }
+        }
+        
         if style_range {
             glyph_color  = style_range.color;
             glyph_variant = style_range.variant;
@@ -401,7 +419,27 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
                 glyph_color.w,
             };
         }
+        
+        
+        // Recolor within-comment keywords.
+        // TODO(payl): pull from theme
+        
+        if comment_todo {
+            glyph_color = unpack_srgba(0xc49191ff);
+            comment_todo -= 1;
+        }
 
+        if comment_note {
+            glyph_color = unpack_srgba(0xdac6abff);
+            comment_note -= 1;
+        }
+
+        if comment_tag {
+            glyph_color = whiten(glyph_color, 0.1);
+            comment_tag -= 1;
+        }
+        
+        
         // TODO(jt): @Hack :MismatchingGlyphMetrics In this routine, we extract metrics based on the variant of the character.
         // In the font_compute_xyz (via get_char_advance) we always get metrics from the regular variant of the font. We should
         // probably fix this and account for style ranges in the other routines?

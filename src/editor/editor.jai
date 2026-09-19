@@ -4742,7 +4742,7 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                             case .DIRECTIVE;       r.color = editor.theme.directive_color; r.variant = editor.theme.directive_variant;
 
                             case .LINE_COMMENT;    #through;
-                            case .BLOCK_COMMENT;   r.color = editor.theme.comment_color; r.variant = editor.theme.comment_variant;
+                            case .BLOCK_COMMENT;   r.color = editor.theme.comment_color; r.variant = editor.theme.comment_variant; r.comment = true;
                         }
 
                         array_add(*style_ranges, r);
