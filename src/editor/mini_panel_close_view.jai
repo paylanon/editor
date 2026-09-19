@@ -9,11 +9,48 @@ mini_panel_close_view_procs: Mini_Panel_Procs = {
     cancel,
 };
 
+// TODO(payl): unify **
+
+close_view :: (editor: *Editor, platform: Platform, input: Input, view: *View) { // **
+    if view.kind == {
+        case .DOCUMENT; {
+            document: *Document = view._document.document;
+            if document {
+                unwatch_file(editor, platform, input, document.backing_file_path);
+                close_document(editor, input, document);
+            }
+        }
+        case .LISTING; {
+            listing: *Listing = view._listing.listing;
+            if listing close_listing(editor, input, listing);
+        }
+    }
+                                                                                   
+}
+
 #scope_file
 
 Close_View_Item_Userdata :: struct {
     kind: View_Kind;
     pointer: *void;
+}
+
+close_view :: (editor: *Editor, platform: Platform, input: Input, userdata: *Close_View_Item_Userdata) { // **
+    if #complete userdata.kind == {
+        case .DOCUMENT; {
+            document: *Document = userdata.pointer;
+            
+            unwatch_file(editor, platform, input, document.backing_file_path);
+            close_document(editor, input, document);
+        }
+        
+        case .LISTING; {
+            listing: *Listing = userdata.pointer;
+            
+            // TODO(jt): Unwatch directory, if we start watching them?
+            close_listing(editor, input, listing);
+        }
+    }
 }
 
 get_action_text :: (editor: *Editor, platform: Platform, input: Input) -> /* Temporary_Storage */ string {
@@ -186,21 +223,7 @@ confirm :: (editor: *Editor, platform: Platform, input: Input) -> buffer_changed
         item := *mini_panel.items[mini_panel.item_index];
 
         userdata: *Close_View_Item_Userdata = mini_panel.items[mini_panel.item_index].userdata;
-        if #complete userdata.kind == {
-            case .DOCUMENT; {
-                document: *Document = userdata.pointer;
-
-                unwatch_file(editor, platform, input, document.backing_file_path);
-                close_document(editor, input, document);
-            }
-
-            case .LISTING; {
-                listing: *Listing = userdata.pointer;
-
-                // TODO(jt): Unwatch directory, if we start watching them?
-                close_listing(editor, input, listing);
-            }
-        }
+        close_view(editor, platform, input, userdata);
     }
 
     close_mini_panel(editor, platform, input);

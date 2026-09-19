@@ -2313,6 +2313,7 @@ Panel_Action :: enum {
     CLOSE_CURRENT_PANEL;
     CLOSE_OTHER_PANELS;
     GO_TO_OTHER_PANEL;
+    CLOSE_PANEL_AND_VIEW;
 
     OPEN_FILE_IN_PROJECT;
     SEARCH_IN_PROJECT;
@@ -2859,6 +2860,42 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
                     newly_active_panel := *editor.panels[editor.left_view_panel_index];
                     touch_panel(newly_active_panel, input.time);
                 }
+            }
+        }
+        case .CLOSE_PANEL_AND_VIEW; {
+            if #complete editor.active_view == {
+                case .FULL; {
+                    close_view(editor, platform, input, *panel.view);
+                }
+                case .LEFT; {
+                    assert(editor.panels.count == 2);
+                    
+                    panel := *editor.panels[editor.left_view_panel_index];
+
+                    close_view(editor, platform, input, *panel.view);
+                    
+                    panel_deinit(panel);
+                    array_unordered_remove_by_index(*editor.panels, editor.left_view_panel_index);
+
+                    editor.full_view_panel_index = 0;
+                    editor.active_view = .FULL;
+                }
+                case .RIGHT; {
+                    assert(editor.panels.count == 2);
+
+                    panel := *editor.panels[editor.left_view_panel_index];
+                    
+                    close_view(editor, platform, input, *panel.view);
+                    
+                    panel_deinit(panel);
+                    array_unordered_remove_by_index(*editor.panels, editor.right_view_panel_index);
+
+                    editor.full_view_panel_index = 0;
+                    editor.active_view = .FULL;
+                }
+
+                newly_active_panel := *editor.panels[editor.full_view_panel_index];
+                touch_panel(newly_active_panel, input.time);
             }
         }
 
