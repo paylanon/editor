@@ -601,6 +601,8 @@ Mini_Panel :: struct {
     items_arena: *Arena;
     items: [..] Item;
     item_index: s64; // [0, items.count) to select a item, -1 to select the mini panel's buffer (if allowed by the action).
+    
+    use_raw_input_for_history: bool;
 
     userdata_arena: *Arena;
     userdata: *void; // Set this by passing it to open_mini_panel. You can allocate it with userdata_arena.
@@ -2751,7 +2753,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .NONE;  return false;
 
         case .SHOW_COMMANDS;         open_mini_panel(editor, platform, input, mini_panel_show_commands_procs);
-        case .SEARCH;                open_mini_panel(editor, platform, input, mini_panel_search_procs);
+        case .SEARCH;                open_mini_panel(editor, platform, input, mini_panel_search_procs, use_raw_input_for_history=true);
 
         case .OPEN_FILE;             open_mini_panel(editor, platform, input, mini_panel_open_file_procs);
         case .SWITCH_VIEW;           open_mini_panel(editor, platform, input, mini_panel_switch_view_procs);
@@ -4905,13 +4907,14 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
     }
 }
 
-open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mini_Panel_Procs) {
+open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mini_Panel_Procs, use_raw_input_for_history := false) {
     mini_panel := *editor.mini_panel;
 
     assert(!mini_panel.open);
 
     mini_panel.procs = procs;
     mini_panel.open = true;
+    mini_panel.use_raw_input_for_history = use_raw_input_for_history;
 
     procs.init(editor, platform, input);
 
@@ -4945,7 +4948,13 @@ append_to_mini_panel_history :: (editor: *Editor, platform: Platform, mini_panel
     }
     
     // Stash executed string, if any, to history of this specific mini-panel.
-    executed_str := copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, history_allocator);
+    executed_str: string;
+    if mini_panel.use_raw_input_for_history {
+        line_view := text_buffer_make_view_for_line(mini_panel.buffer, 0);
+        executed_str = copy_string(line_view);
+    } else {
+        executed_str = copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, history_allocator);
+    }
     if executed_str {
                 
         history_target: *Mini_Panel_History;
