@@ -11,7 +11,7 @@ Theme :: struct {
     matching_parenthesis_color: Vector4;
 
     modeline_color: Vector4;
-    modeline_color_active: Vector4;
+    modeline_color_inactive: Vector4;
 
     background_color: Vector4;
     separator_color: Vector4;
@@ -23,6 +23,7 @@ Theme :: struct {
     listing_item_text_variant_marked: Font_Variant;
 
     system_text_color: Vector4;
+    system_text_color_inactive: Vector4;
     system_text_variant: Font_Variant;
     text_color: Vector4;
     text_variant: Font_Variant;
@@ -114,7 +115,7 @@ abulafia_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0x50ffa0ff);
     text_color            := unpack_srgba(0xcdaa7dff);
     background_color      := unpack_srgba(0x191919ff);
-    modeline_color_active := unpack_srgba(0x090909ff);
+    modeline_color        := unpack_srgba(0x090909ff);
     keyword_color         := unpack_srgba(0xe95410ff);
 
     cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
@@ -129,11 +130,11 @@ abulafia_theme :: () -> Theme {
     t.highlight_color            = cursor_minus_1;
     t.highlight_color_active     = unpack_srgba(0xd09090c0);
     t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
-    t.modeline_color             = unpack_srgba(0x252525ff);
-    t.modeline_color_active      = modeline_color_active;
+    t.modeline_color             = modeline_color;
+    t.modeline_color_inactive    = unpack_srgba(0x252525ff);
 
     t.background_color           = background_color;
-    t.separator_color            = modeline_color_active;
+    t.separator_color            = modeline_color;
 
     t.listing_line_color               = cursor_minus_2;
     t.listing_item_text_color          = text_color;
@@ -141,6 +142,7 @@ abulafia_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = unpack_srgba(0xb0b0b0ff);
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
     t.attribute_color      = keyword_color;
@@ -176,8 +178,8 @@ naysayer_theme :: () -> Theme {
     t.highlight_color            = cursor_minus_1;
     t.highlight_color_active     = unpack_srgba(0xd09090c0);
     t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
-    t.modeline_color             = unpack_srgba(0xc5c5c9ff);
-    t.modeline_color_active      = text_color;
+    t.modeline_color             = text_color;
+    t.modeline_color_inactive    = unpack_srgba(0xc5c5c9ff);
 
     t.background_color           = background_color;
     t.separator_color            = unpack_srgba(0x000000ff);
@@ -188,6 +190,7 @@ naysayer_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = unpack_srgba(0x000000ff);
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
     t.attribute_color      = unpack_srgba(0x9bdfa5ff); // Jon also uses this for known types, like s8, bool, int.
@@ -207,7 +210,7 @@ handmade_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0x40ff40ff);
     text_color            := unpack_srgba(0xcdaa7dff);
     background_color      := unpack_srgba(0x191919ff);
-    modeline_color_active := unpack_srgba(0x090909ff);
+    modeline_color        := unpack_srgba(0x090909ff);
     keyword_color         := unpack_srgba(0xc38d03ff);
 
     cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
@@ -222,11 +225,11 @@ handmade_theme :: () -> Theme {
     t.highlight_color            = cursor_minus_1;
     t.highlight_color_active     = unpack_srgba(0xd09090c0);
     t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
-    t.modeline_color             = unpack_srgba(0x252525ff);
-    t.modeline_color_active      = modeline_color_active;
+    t.modeline_color             = modeline_color;
+    t.modeline_color_inactive    = unpack_srgba(0x252525ff);
 
     t.background_color           = background_color;
-    t.separator_color            = modeline_color_active;
+    t.separator_color            = modeline_color;
 
     t.listing_line_color               = cursor_minus_2;
     t.listing_item_text_color          = text_color;
@@ -234,6 +237,7 @@ handmade_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = unpack_srgba(0xb0b0b0ff);
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
     t.attribute_color      = unpack_srgba(0xdab98fff);
@@ -252,13 +256,13 @@ handmade_theme :: () -> Theme {
 }
 
 stb_theme :: () -> Theme {
-    foreground_color       := Vector4.{ 0, 0, 0, 1 };
-    background_color       := Vector4.{ 1, 1, 1, 1 };
-    cursor_color_readonly  := unpack_srgba(0xa0a0a0ff);
-    highlight_color        := Vector4.{ 0, 0, 0, 0.1 };
-    highlight_color_active := Vector4.{ 0, 0, 0, 0.2 };
-    modeline_color         := unpack_srgba(0xd0d0d0ff);
-    modeline_color_active  := unpack_srgba(0xb0b0b0ff);
+    foreground_color        := Vector4.{ 0, 0, 0, 1 };
+    background_color        := Vector4.{ 1, 1, 1, 1 };
+    cursor_color_readonly   := unpack_srgba(0xa0a0a0ff);
+    highlight_color         := Vector4.{ 0, 0, 0, 0.1 };
+    highlight_color_active  := Vector4.{ 0, 0, 0, 0.2 };
+    modeline_color          := unpack_srgba(0xb0b0b0ff);
+    modeline_color_inactive := unpack_srgba(0xd0d0d0ff);
 
     t: Theme;
     t.cursor_color               = foreground_color;
@@ -271,7 +275,7 @@ stb_theme :: () -> Theme {
     t.highlight_color_active     = highlight_color_active;
     t.matching_parenthesis_color = { 0, 0, 0, 0 };
     t.modeline_color             = modeline_color;
-    t.modeline_color_active      = modeline_color_active;
+    t.modeline_color_inactive    = modeline_color_inactive;
 
     t.background_color           = background_color;
     t.separator_color            = foreground_color;
@@ -282,6 +286,7 @@ stb_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = foreground_color;
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = foreground_color;
     t.keyword_color        = foreground_color;
     t.attribute_color      = foreground_color;
@@ -317,8 +322,8 @@ zenburn_theme :: () -> Theme {
     t.highlight_color            = set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
     t.highlight_color_active     = unpack_srgba(0xd09090c0);
     t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
-    t.modeline_color             = unpack_srgba(0x2b2b2bff);
-    t.modeline_color_active      = unpack_srgba(0x202020ff);
+    t.modeline_color             = unpack_srgba(0x202020ff);
+    t.modeline_color_inactive    = unpack_srgba(0x2b2b2bff);
 
     t.background_color           = background_color;
     t.separator_color            = unpack_srgba(0x000000ff);
@@ -329,6 +334,7 @@ zenburn_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = keyword_color;
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
     t.keyword_variant      = .BOLD;
@@ -348,20 +354,20 @@ zenburn_theme :: () -> Theme {
 }
 
 visual_studio_light_theme :: () -> Theme {
-    background_color       := unpack_srgba(0xffffffff);
-    foreground_color       := unpack_srgba(0x000000ff);
-    cursor_color_readonly  := unpack_srgba(0xa0a0a0ff);
-    selection_color        := unpack_srgba(0xb5d3fdff);
-    highlight_color        := unpack_srgba(0xf6cdb5ff);
-    highlight_color_active := unpack_srgba(0xa6ad95ff);
+    background_color        := unpack_srgba(0xffffffff);
+    foreground_color        := unpack_srgba(0x000000ff);
+    cursor_color_readonly   := unpack_srgba(0xa0a0a0ff);
+    selection_color         := unpack_srgba(0xb5d3fdff);
+    highlight_color         := unpack_srgba(0xf6cdb5ff);
+    highlight_color_active  := unpack_srgba(0xa6ad95ff);
 
-    modeline_color         := unpack_srgba(0xd0d0d0ff);
-    modeline_color_active  := unpack_srgba(0xb0b0b0ff);
+    modeline_color          := unpack_srgba(0xb0b0b0ff);
+    modeline_color_inactive := unpack_srgba(0xd0d0d0ff);
 
-    keyword_color          := unpack_srgba(0x5400faff);
-    number_color           := unpack_srgba(0x0e8559ff);
-    string_color           := unpack_srgba(0x9f281dff);
-    comment_color          := unpack_srgba(0x008012ff);
+    keyword_color           := unpack_srgba(0x5400faff);
+    number_color            := unpack_srgba(0x0e8559ff);
+    string_color            := unpack_srgba(0x9f281dff);
+    comment_color           := unpack_srgba(0x008012ff);
 
     t: Theme;
     t.cursor_color               = foreground_color;
@@ -374,7 +380,7 @@ visual_studio_light_theme :: () -> Theme {
     t.highlight_color_active     = highlight_color_active;
     t.matching_parenthesis_color = highlight_color_active;
     t.modeline_color             = modeline_color;
-    t.modeline_color_active      = modeline_color_active;
+    t.modeline_color_inactive    = modeline_color_inactive;
 
     t.background_color           = background_color;
     t.separator_color            = foreground_color;
@@ -385,6 +391,7 @@ visual_studio_light_theme :: () -> Theme {
     t.listing_item_text_variant_marked = .BOLD;
 
     t.system_text_color    = foreground_color;
+    t.system_text_color_inactive = t.system_text_color;
     t.text_color           = foreground_color;
     t.keyword_color        = keyword_color;
     t.attribute_color      = keyword_color;
@@ -418,8 +425,6 @@ sokoban_theme :: () -> Theme {
     t.highlight_color            = cursor_minus_1;
     t.highlight_color_active     = unpack_srgba(0xd09090c0);
     t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
-    t.modeline_color             = unpack_srgba(0xc5c5c9ff);
-    t.modeline_color_active      = text_color;
 
     t.background_color           = background_color;
     t.separator_color            = unpack_srgba(0x000000ff);
@@ -429,7 +434,12 @@ sokoban_theme :: () -> Theme {
     t.listing_item_text_color_marked   = keyword_color;
     t.listing_item_text_variant_marked = .BOLD;
 
-    t.system_text_color    = unpack_srgba(0x000000ff);
+    // a la doom modeline
+    t.modeline_color             = unpack_srgba(0x171717ff);
+    t.modeline_color_inactive    = t.modeline_color;
+    t.system_text_color          = darken(text_color, 0.1);
+    t.system_text_color_inactive = darken(unpack_srgba(0xc5c5c9ff), 0.4);
+    
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
     t.attribute_color      = unpack_srgba(0xdac6abff);

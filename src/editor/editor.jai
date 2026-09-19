@@ -4824,8 +4824,10 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 modeline_offset := DVector2.{ panel_x, modeline_y };
 
                 set_scissor(render_commands, modeline_rect);
-                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
-
+                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color else editor.theme.modeline_color_inactive);
+                
+                text_color := ifx panel_is_active then editor.theme.system_text_color else editor.theme.system_text_color_inactive;
+                
                 cursor  := view.cursors.c0;
                 percent := cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
 
@@ -4841,7 +4843,7 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 _font_layout_and_draw_text(*editor.font, s,
                                            render_commands, atlas_update_regions,
                                            modeline_offset, modeline_rect,
-                                           editor.theme.system_text_color, .REGULAR,
+                                           text_color, .REGULAR,
                                            .[], .[],
                                            binary = false);
             }
@@ -4920,7 +4922,9 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 modeline_offset := DVector2.{ panel_x, modeline_y };
 
                 set_scissor(render_commands, modeline_rect);
-                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
+                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color else editor.theme.modeline_color_inactive);
+                
+                text_color := ifx panel_is_active then editor.theme.system_text_color else editor.theme.system_text_color_inactive;
 
                 item_index := view.item_index;
                 percent := cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
@@ -4936,7 +4940,7 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 _font_layout_and_draw_text(*editor.font, s,
                                            render_commands, atlas_update_regions,
                                            modeline_offset, modeline_rect,
-                                           editor.theme.system_text_color, .REGULAR,
+                                           text_color, .REGULAR,
                                            .[], .[],
                                            binary = false);
             }
