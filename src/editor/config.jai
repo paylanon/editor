@@ -79,7 +79,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                         return false;
                     }
                     
-                    success = set_global_config_pair(*editor.config, key, value);
+                    success = parse_global_config_pair(*editor.config, key, value);
 
                     if !success {
                         editor_log(editor, "Unknown key on line %", lexer.line_index + 1);
@@ -88,7 +88,20 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                 }
 
                 case .KEYBINDS_PANEL;        #through;
-                case .KEYBINDS_DOCUMENT;     #through;
+                case .KEYBINDS_DOCUMENT; {
+                    if lexer.input[0] == "&" {
+                        // Parse custom action declaration.
+                        line := eat_line(*lexer);
+                        found, left, right := String.split_from_right(line, #char "=");
+                        if found {
+                            name := String.trim(left);
+                            advance(*name);
+                            sequence := String.trim(right);
+                            array_add(*document_macros, {name=name, action_sequence_str=sequence});
+                            continue;
+                        }
+                    }
+                }                            #through;
                 case .KEYBINDS_COMPILATION;  #through;
                 case .KEYBINDS_LISTING;      #through;
                 case .KEYBINDS_MINI_PANEL;   #through;
@@ -123,8 +136,6 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
             }
         }
     }
-
-    log("%", editor.config);
     
     if editor.config.theme.count {
         change_theme(editor, editor.config.theme);
@@ -146,6 +157,8 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
     for config_keybinds_mp           key_map_add(*editor.mini_panel.key_map, it.shortcut, it.action);
     for config_keybinds_mi           key_map_add(*editor.modal_interaction.key_map, it.shortcut, it.action);
 
+    for document_macros              key_map_add(*editor.document_key_map, it.shortcut, .MACRO);
+    
     return true;
 }
 
@@ -360,7 +373,7 @@ parse_keybind_pair :: (lexer: *Config_Lexer) -> success: bool, shortcut: string,
     return true, shortcut, action;
 }
 
-set_global_config_pair :: (config: *Global_Config, key: string, value: string) -> success: bool {
+parse_global_config_pair :: (config: *Global_Config, key: string, value: string) -> success: bool {
     
     target_type: Type;
     target_offset: s64;
@@ -463,6 +476,25 @@ verify_and_add_keybind :: (keybinds: *[..] Keybind_Pair($T), shortcut: Shortcut,
         array_add(keybinds, { shortcut, action });
     }
 
+    #if T == Document_Action if !found {
+        
+        // Check against registered macros.
+        for * macro: document_macros if _action == macro.name {
+            macro.shortcut = shortcut;
+            found = true;
+            // Process sequence string into enum array.
+            sequence := String.split(macro.action_sequence_str, ">");
+            for sequence {
+                action_str := String.trim(it);
+                found, found_index := array_find(names, action_str, String.equal_nocase);
+                if found {
+                    action := values[found_index];
+                    array_add(*macro.action_sequence, action);
+                }
+            }
+        }
+    }
+    
     return found;
 }
 

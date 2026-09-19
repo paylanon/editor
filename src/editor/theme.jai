@@ -39,6 +39,9 @@ Theme :: struct {
     comment_color: Vector4;
     comment_variant: Font_Variant;
 
+    warning_color: Vector4;
+    error_color:   Vector4;
+    
     mini_panel_line_color: Vector4;
     mini_panel_item_text_color: Vector4;
     mini_panel_item_warning_text_color: Vector4;
@@ -391,6 +394,9 @@ sokoban_theme :: () -> Theme {
     t.mini_panel_item_text_color = text_color;
     t.mini_panel_item_warning_text_color = unpack_srgba(0xe95410ff);
 
+    t.warning_color = unpack_srgba(0xffe6b3ff);
+    t.error_color = unpack_srgba(0xc49191ff);
+    
     return t;
 }
 

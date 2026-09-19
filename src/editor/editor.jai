@@ -273,6 +273,7 @@ Editor :: struct {
     document_key_map:    Key_Map(Document_Action);
     compilation_key_map: Key_Map(Compilation_Action);
     listing_key_map:     Key_Map(Listing_Action);
+    
     theme: Theme;
     
     config: Global_Config;
@@ -304,7 +305,7 @@ Editor :: struct {
     mini_panel: Mini_Panel;
     modal_interaction: Modal_Interaction;
 
-    messages: [..] string;
+    messages: [..] Editor_Message;
     last_message_seen: bool;
 
     is_first_frame: bool;
@@ -361,6 +362,11 @@ Editor :: struct {
     }
 }
 
+Editor_Message :: struct {
+    text: string;
+    color: Vector4;
+}
+
 Panel :: struct {
     flags: Flags;
 
@@ -413,9 +419,11 @@ Document_View :: struct {
 
     cursors: Text_Cursors;
     selecting: bool;
-    
-    cursor_mark: Text_Location; // @TODO
 
+    cursor_mark: Text_Location; // TODO(payl)
+
+    recording_macro: bool;
+    
     // Preserved at the start of each frame to find out if we want to kick off cursor animation, if
     // the cursor changed position due to input.
     old_cursor: Text_Location;
@@ -1285,10 +1293,11 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
 
                 offset  := DVector2.{ message_line_x0, message_line_y };
                 scissor := Rect.{ message_line_x0, message_line_y, message_line_x1, window_h };
-                _font_layout_and_draw_text(*editor.font, message,
+                color   := ifx message.color != {} then message.color else editor.theme.text_color;
+                _font_layout_and_draw_text(*editor.font, message.text,
                                            *render_commands, *atlas_update_regions,
                                            offset, scissor,
-                                           editor.theme.text_color, .REGULAR,
+                                           color, .REGULAR,
                                            .[], .[],
                                            binary = false);
             }
@@ -1645,9 +1654,9 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
     return wants_this_frame, wants_next_frame;
 }
 
-editor_log :: (editor: *Editor, format_string: string, args: ..Any, loc := #caller_location) {
+editor_log :: (editor: *Editor, format_string: string, args: ..Any, color := Vector4.{}, loc := #caller_location) {
     s := sprint(format_string, ..args,, arena_allocator(editor.perm_arena));
-    array_add(*editor.messages, s);
+    array_add(*editor.messages, {s, color});
     editor.last_message_seen = false;
 
     log(format_string, ..args, loc);
@@ -2399,7 +2408,29 @@ Document_Action :: enum {
 
     DEBUG_PRINT_BYTE_AT_CURSOR;
     DEBUG_INSERT_BENCHMARK_TEXT;
+
+    START_RECORDING_MACRO;
+    STOP_RECORDING_MACRO;
+    
+    MACRO;
+    
+    TEXT_INPUT; // * used only within macro
 }
+
+Document_Macro :: struct {
+    name: string;
+    shortcut: Shortcut;
+    action_sequence_str: string;
+    action_sequence: [..] Document_Action;
+    text_input: [..] u32;
+}
+
+document_macros: [..] Document_Macro;
+
+// f3 > f4 > f4 style runtime macro recording, limited to a single 'staged macro'.
+macro_recording: [..] Document_Action;
+staged_macro: Document_Macro;
+
 
 Compilation_Action :: enum {
     NONE;
@@ -2559,13 +2590,29 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
             }
 
             if document.kind == .COMPILATION {
+                
                 buffered, action   := key_map_input(*editor.compilation_key_map, event);
                 did_buffer_event   |= buffered;
                 did_execute_action |= execute_compilation_action(editor, platform, input, panel, view, document, action);
+                
             } else {
-                buffered, action   := key_map_input(*editor.document_key_map, event);
-                did_buffer_event   |= buffered;
-                did_execute_action |= execute_document_action(editor, platform, input, panel, view, document, action);
+                
+                buffered, action, shortcut := key_map_input(*editor.document_key_map, event);
+                did_buffer_event |= buffered;
+                
+                if action == .MACRO {
+                    
+                    macro: Document_Macro;
+                    // TODO(payl): @Speed put macros in a separate keymap?
+                    for document_macros if !memcmp(*it.shortcut, *shortcut, size_of(Shortcut)) macro = it;
+                    if macro.name {
+                        did_execute_action |= execute_document_macro(editor, platform, input, panel, view, document, macro);
+                    }
+                    
+                } else {
+                    
+                    did_execute_action |= execute_document_action(editor, platform, input, panel, view, document, action);
+                }
             }
 
             // TODO(jt): @Bug This is what our indentation does. I actually like it, but people will expect something else?
@@ -2646,6 +2693,12 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
                         }
 
                         text_buffer_insert_char(*document.buffer, *view.cursors, char, undo_modifier);
+
+                        if view.recording_macro {
+                            
+                            array_add(*macro_recording, .TEXT_INPUT);
+                            array_add(*staged_macro.text_input, char);
+                        }
 
                         document.time_of_last_simple_edit = input.time;
                     }
@@ -2837,7 +2890,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
 }
 
 // Panel, view and document correspond to each other here. Not sure if I like this amount aliasing, but eh?
-execute_document_action :: (editor: *Editor, platform: Platform, input: Input, panel: *Panel, view: *Document_View, document: *Document, action: Document_Action) -> executed: bool, cursor_moved: bool, buffer_changed: bool {
+execute_document_action :: (editor: *Editor, platform: Platform, input: Input, panel: *Panel, view: *Document_View, document: *Document, action: Document_Action, within_macro := false) -> executed: bool, cursor_moved: bool, buffer_changed: bool {
     sanity_assert(document.kind != .COMPILATION);
     if document.kind == .COMPILATION {
         return false, false, false;
@@ -3494,6 +3547,43 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 open_modal_interaction(editor, platform, input, modal_interaction_benchgen_procs);
             }
         }
+
+        case .START_RECORDING_MACRO; {
+            array_reset(*macro_recording);
+            array_reset(*staged_macro.text_input);
+            view.recording_macro = true;
+            editor_log(editor, "Defining macro...", color=editor.theme.error_color);
+        }
+        
+        case .STOP_RECORDING_MACRO; {
+            if view.recording_macro {
+                if !macro_recording.count {
+                    editor_log(editor, "Ignoring empty macro.");
+                } else {
+                    // register recorded macro
+                    view.recording_macro = false;
+                    staged_macro.name = "_r";
+                    staged_macro.action_sequence = macro_recording;
+                    editor_log(editor, "Macro defined.");
+                }
+            } else {
+                if staged_macro.name {
+                    // execute recorded macro
+                    cursor_moved, buffer_changed = execute_document_macro(editor, platform, input, panel, view, document, staged_macro);
+                }
+            }
+        }
+    
+        case .MACRO; // * handled in execute_document_macro()
+        case .TEXT_INPUT; {
+            if within_macro {
+
+                // TODO(payl)
+                // char: u32;
+                // for staged_macro.text_input { char = it; remove; }
+                // buffer_changed |= text_buffer_insert_char(*document.buffer, *view.cursors, char, .NONE);
+            }
+        }
     }
 
     if cursor_moved || buffer_changed {
@@ -3515,6 +3605,22 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         // becuase not every subsequent action needs these up to date.  -jt, 22 July 2026.
         update_scopes(document);
     }
+
+    if view.recording_macro && action != .START_RECORDING_MACRO {
+        array_add(*macro_recording, action);
+    }
+
+    return true, cursor_moved, buffer_changed;
+}
+
+execute_document_macro :: (editor: *Editor, platform: Platform, input: Input, panel: *Panel, view: *Document_View, document: *Document, macro: Document_Macro) -> executed: bool, cursor_moved: bool, buffer_changed: bool {
+
+    cursor_moved   := false;
+    buffer_changed := false;
+
+    for action: macro.action_sequence {
+        cursor_moved, buffer_changed ^= execute_document_action(editor, platform, input, panel, view, document, action, within_macro=true);
+    };
 
     return true, cursor_moved, buffer_changed;
 }
@@ -4816,7 +4922,7 @@ open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mi
 }
 
 
-// @NOTE(payl): Searching by Mini_Panel_Procs to access history is obviously
+// NOTE(payl): Searching by Mini_Panel_Procs to access history is obviously
 // kinda braindead. Maybe persistent mini-panels is the ideal approach?
 // In which case we skip string allocation too, in favor of views.
 

@@ -42,7 +42,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
             if found {
                 found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
             
-                // @TODO live preview?
+                // TODO(payl): live preview?
             
                 x0 := count_utf8_chars(String.slice(theme_name, 0, found_index));
             

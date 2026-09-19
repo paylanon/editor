@@ -351,14 +351,14 @@ key_map_flush :: (key_map: *Key_Map) {
     key_map.buffered_input = {};
 }
 
-key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, action: T {
+key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, action: T, shortcut: Shortcut {
     // Do nothing, if we haven't got shortcuts to compare against.
     if !key_map.registered_shortcuts.count {
-        return false, default_of(T);
+        return false, default_of(T), {};
     }
 
     if is_modifier_key_event(event) {
-        return true, default_of(T);
+        return true, default_of(T), {};
     }
 
     if event.flags & .PRESSED {
@@ -377,6 +377,7 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
         key_map.buffered_input.count += 1;
 
         has_candidates := false;
+
         for key_map.registered_shortcuts {
             if shortcut_begins_with_nocase(it, key_map.buffered_input) {
                 has_candidates = true;
@@ -386,19 +387,19 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
                 key_map.buffered_input = {};
                 action := key_map.registered_actions[it_index];
 
-                return false, action;
+                return false, action, it;
             }
         }
 
         if has_candidates {
-            return true, default_of(T);
+            return true, default_of(T), {};
         } else {
             key_map.buffered_input = {};
-            return false, default_of(T);
+            return false, default_of(T), {};
         }
     }
 
-    return false, default_of(T);
+    return false, default_of(T), {};
 }
 
 #scope_file
