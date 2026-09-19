@@ -44,6 +44,8 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
 
     section := Config_Section.GLOBAL;
 
+    array_reset(*document_macros);
+    
     while 1 {
         eat_whitespace(*lexer);
 
