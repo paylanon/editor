@@ -11,12 +11,12 @@ Making a release:
 
 (Windows)
 
-1) jai -optimized_debug build.jai - -no-windows-console -bundle
+1) jai -optimized_debug build.jai - -bundle -no-sanity -no-windows-console
 2) Zip build/editor
 
 (macOS)
 
-1) jai -optimized_debug build.jai - -bundle
+1) jai -optimized_debug build.jai - -bundle -no-sanity
 
 (Linux coming soonish)
 
@@ -213,16 +213,13 @@ OPTIONS:
   -x64                    Compile with the x64 backend
   -llvm                   Compile with the LLVM backend
 
+Following commands can be negated with '-no':
+
   -profile                Instrument with profiling code
-  -no-profile             Don't instrument with profiling code
-  -profile-verbose        Print more messages about instrumented profiler zones
-  -no-profile-verbose     Do not print more messages about instrumented profiler zones
-  -sanity                 Turns on slow paranoid asserts
-  -no-sanity              Turns off slow paranoid asserts
-  -windows-console        Shows console on Windows when launched from gui
-  -no-windows-console     Hides console on Windows when launched from gui and disables all console logging
-  -bundle                 Create a bundle after compilation succeeds
-  -no-bundle              Don't create a bundle after compilation succeeds
+  -profile-verbose        Print messages about instrumented zones, does nothing unless profiling is enabled
+  -sanity                 Turn on slow paranoid asserts
+  -windows-console        Show console on Windows when launched from gui, disabling turns off all console logging
+  -bundle                 Create a distribution bundle after compilation succeeds
 
 For DEFAULT_METAPROGRAM_OPTIONS, type 'jai -help'.
 
