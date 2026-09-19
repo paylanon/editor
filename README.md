@@ -45,18 +45,13 @@ This is an early alpha. Bugs and occational crashes may happen. Save often.
 
 **Language support**
 
-Only C/C++, Jai, and GLSL are supported right now.
-
-I plan to add support for Rust, C#, TypeScript and Slang soon.
+Only C/C++, Jai, and GLSL are supported right now. I plan to add support for more languages soon.
 If you want to add support for a language for yourself, look at the existing `lang_xyz.jai` files.
 
 **Performance**
 
-- To help debug tricky parts of the code, expensive paranoid assertions are enabled by default.
-  You can disable these by building with `-no-sanity`. They will eventually be disabled by default.
-
-- The parser for indentation and lexers for syntax highlighting need to get faster.
-  The editor turns them off for files above 10 megabytes.
+The parser for indentation and lexers for syntax highlighting need to get faster.
+The editor turns them off for files above 10 megabytes.
 
 **Misc**
 
