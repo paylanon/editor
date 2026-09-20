@@ -411,20 +411,21 @@ sokoban_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0xc9c9bfff);
     text_color            := unpack_srgba(0xd4c7b4ff);
     background_color      := unpack_srgba(0x111111ff);
-    keyword_color         := unpack_srgba(0xddddddff);
+    keyword_color         := unpack_srgba(0xddddddff);    
+    method_color          := unpack_srgba(0xc1d1e3ff);
+    highlight_color       := unpack_srgba(0x70a0f0ff);
 
-    cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
-    cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
-
+    cursor_minus_2 := set_alpha(adjust_saturation(cursor_color, 0.3), 0.1);
+    
     t: Theme;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
     t.line_color                 = { 0, 0, 0, 0 };
     t.selection_color            = unpack_srgba(0x5f5f6eff);
-    t.highlight_color            = cursor_minus_1;
-    t.highlight_color_active     = unpack_srgba(0xd09090c0);
-    t.matching_parenthesis_color = unpack_srgba(0x70a0f0ff);
+    t.highlight_color            = set_alpha(highlight_color, 0.4);
+    t.highlight_color_active     = set_alpha(highlight_color, 0.6);
+    t.matching_parenthesis_color = highlight_color;
 
     t.background_color           = background_color;
     t.separator_color            = unpack_srgba(0x000000ff);

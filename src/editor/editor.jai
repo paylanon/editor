@@ -210,6 +210,7 @@ operator==     :: Math.operator==;
 #load "mini_panel_close_view.jai";
 #load "mini_panel_show_commands.jai";
 #load "mini_panel_set_theme.jai";
+#load "mini_panel_imenu.jai";
 #load "modal_interaction_search_and_replace.jai";
 #load "modal_interaction_go_to_line.jai";
 #load "modal_interaction_compile.jai";
@@ -2408,9 +2409,8 @@ Document_Action :: enum {
     LANGUAGE_C;
     LANGUAGE_JAI;
     LANGUAGE_GLSL;
-
-    DEBUG_PRINT_BYTE_AT_CURSOR;
-    DEBUG_INSERT_BENCHMARK_TEXT;
+    
+    IMENU;
 
     START_RECORDING_MACRO;
     STOP_RECORDING_MACRO;
@@ -2418,6 +2418,9 @@ Document_Action :: enum {
     MACRO;
     
     TEXT_INPUT; // * used only within macro
+    
+    DEBUG_PRINT_BYTE_AT_CURSOR;
+    DEBUG_INSERT_BENCHMARK_TEXT;
 }
 
 Document_Macro :: struct {
@@ -2900,7 +2903,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         }
 
         case .OPEN_FILE_IN_PROJECT;             open_mini_panel(editor, platform, input, mini_panel_open_file_in_project_procs);
-        case .SEARCH_IN_PROJECT;                open_mini_panel(editor, platform, input, mini_panel_search_in_project_procs);
+        case .SEARCH_IN_PROJECT;                open_mini_panel(editor, platform, input, mini_panel_search_in_project_procs, use_raw_input_for_history=true);
         case .COMPILE_IN_PROJECT_OR_DIRECTORY;  open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.PROJECT_OR_DIRECTORY));
         case .COMPILE_IN_DIRECTORY;             open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.DIRECTORY));
 
@@ -3586,6 +3589,8 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 open_modal_interaction(editor, platform, input, modal_interaction_benchgen_procs);
             }
         }
+        
+        case .IMENU; open_mini_panel(editor, platform, input, mini_panel_imenu_procs);
 
         case .START_RECORDING_MACRO; {
             array_reset(*macro_recording);

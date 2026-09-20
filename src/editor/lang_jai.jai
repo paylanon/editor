@@ -40,8 +40,12 @@ lang_jai_update_tokens :: (document: *Document) {
     JL.set_input_from_string(*lexer, contents);
 
     last_token_is_pound  := false;
+    last_token_is_colon  := false;
     last_token_is_dollar := false;
     last_token_is_double_dollar := false;
+
+    last_ident_token: Token;
+    
     while 1 {
         // The lexer has a MAX_CONCURRENT_TOKENS, which is how many you can still access before they
         // get overwritten. Pretty cool.
@@ -68,7 +72,20 @@ lang_jai_update_tokens :: (document: *Document) {
         // (regular, bold, italic, etc.) and make use of this.
 
         if jl_token.type == {
+            
+            // NOTE(payl): Let an IDENTIFIER token be any IDENT that precedes double colon.
+            // We can improve the imenu by splitting them into struct, enum and proc per the
+            // next token, but in this way the lexer can be kept as is.
+            
+            case #char ":"; {
+                if last_token_is_colon {
+                    token = last_ident_token;
+                    token.type = .IDENTIFIER;
+                }
+            }
+        
             case .IDENT; {
+                last_ident_token = token;
                 if last_token_is_pound || last_token_is_dollar {
                     token.type = .DIRECTIVE;
                     token.loc0.x -= 1;
@@ -103,6 +120,7 @@ lang_jai_update_tokens :: (document: *Document) {
         }
 
         last_token_is_pound  = jl_token.type == #char "#";
+        last_token_is_colon  = jl_token.type == #char ":";
         last_token_is_dollar = jl_token.type == DOLLAR;
         last_token_is_double_dollar = jl_token.type == .DOUBLE_DOLLAR;
 
