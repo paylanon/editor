@@ -1,0 +1,15 @@
+(unreleased)
+------------
+
+- Stop building binary releases with the -sanity flag, making anything text related much faster.
+  This makes it possible to open and edit files up to a few gigabytes, although some operations will still be slow.
+  The hard limit is 8GB - the size of the per-file memory reservation, but you'll run into problems much sooner.
+- Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
+  triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
+- Disable automatic stripping of whitespace on save, as it made it difficult to work with source code with different conventions.
+  This will eventually be a project configuration option. For now, you can strip_whitespace manually.
+
+alpha 0.0.1
+-----------
+
+First public release. Contains binaries for Windows. Mac can be built from source, but not yet bundled. No linux yet.
