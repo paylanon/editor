@@ -1,5 +1,8 @@
 // TODO(jt): Make themes configurable. :Config
 Theme :: struct {
+    
+    builtin_index: Builtin_Themes;
+    
     cursor_color: Vector4;
     cursor_color_hot: Vector4;
     cursor_color_readonly: Vector4;
@@ -122,6 +125,7 @@ abulafia_theme :: () -> Theme {
     cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
 
     t: Theme;
+    t.builtin_index = .Abulafia;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
@@ -170,6 +174,7 @@ naysayer_theme :: () -> Theme {
     cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
 
     t: Theme;
+    t.builtin_index = .Naysayer;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
@@ -217,6 +222,7 @@ handmade_theme :: () -> Theme {
     cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
 
     t: Theme;
+    t.builtin_index = .Handmade;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
@@ -265,6 +271,7 @@ stb_theme :: () -> Theme {
     modeline_color_inactive := unpack_srgba(0xd0d0d0ff);
 
     t: Theme;
+    t.builtin_index = .Stb;
     t.cursor_color               = foreground_color;
     t.cursor_color_hot           = foreground_color;
     t.cursor_color_readonly      = cursor_color_readonly;
@@ -314,6 +321,7 @@ zenburn_theme :: () -> Theme {
     background_color      := unpack_srgba(0x3f3f3fff);
 
     t: Theme;
+    t.builtin_index = .Zenburn;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = unpack_srgba(0xffffffff);
     t.cursor_color_readonly      = unpack_srgba(0xcc9393ff);
@@ -370,6 +378,7 @@ visual_studio_light_theme :: () -> Theme {
     comment_color           := unpack_srgba(0x008012ff);
 
     t: Theme;
+    t.builtin_index = .Visual_Studio_Light;
     t.cursor_color               = foreground_color;
     t.cursor_color_hot           = keyword_color;
     t.cursor_color_readonly      = cursor_color_readonly;
@@ -418,6 +427,7 @@ sokoban_theme :: () -> Theme {
     cursor_minus_2 := set_alpha(adjust_saturation(cursor_color, 0.3), 0.1);
     
     t: Theme;
+    t.builtin_index = .Sokoban;
     t.cursor_color               = cursor_color;
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
