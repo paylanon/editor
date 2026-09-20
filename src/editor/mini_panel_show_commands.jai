@@ -24,7 +24,7 @@ LISTING_ACTION_NAMES  :: #run enum_names(Listing_Action);
 LISTING_ACTION_VALUES :: #run enum_values_as_s64(Listing_Action);
 
 Show_Commands_Item_Userdata :: struct {
-    kind:  enum { UNINITIALIZED; PANEL; DOCUMENT; COMPILATION; LISTING; };
+    kind:  enum { UNINITIALIZED; PANEL; DOCUMENT; DOCUMENT_MACRO; COMPILATION; LISTING; };
     value: s64;
 }
 
@@ -104,6 +104,9 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
         document_actions_low:  s64 = actions_to_search_names.count;
         document_actions_high: s64 = actions_to_search_names.count;
 
+        document_macros_low:  s64 = actions_to_search_names.count;
+        document_macros_high: s64 = actions_to_search_names.count;
+
         compilation_actions_low:  s64 = actions_to_search_names.count;
         compilation_actions_high: s64 = actions_to_search_names.count;
 
@@ -144,6 +147,15 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     assert(actions_to_search_names.count == actions_to_search_values.count);
 
                     document_actions_high = actions_to_search_names.count;
+
+                    for document_macros {
+                        action_text := build_action_text(it);
+                        array_add(*actions_to_search_names, action_text);
+                        array_add(*actions_to_search_values, it_index);
+                    }
+                    assert(actions_to_search_names.count == actions_to_search_values.count);
+
+                    document_macros_high = actions_to_search_names.count;
                 }
             }
             case .LISTING; {
@@ -187,6 +199,8 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     userdata.kind = .PANEL;
                 } else if it_index >= document_actions_low && it_index < document_actions_high {
                     userdata.kind = .DOCUMENT;
+                } else if it_index >= document_macros_low && it_index < document_macros_high {
+                    userdata.kind = .DOCUMENT_MACRO;
                 } else if it_index >= compilation_actions_low && it_index < compilation_actions_high {
                     userdata.kind = .COMPILATION;
                 } else if it_index >= listing_actions_low && it_index < listing_actions_high {
@@ -279,7 +293,16 @@ confirm :: (editor: *Editor, platform: Platform, input: Input) -> buffer_changed
                 sanity_assert(document.kind != .COMPILATION);
                 action := cast(Document_Action, userdata.value);
                 execute_document_action(editor, platform, input, panel, view, document, action);
+            }
 
+            case .DOCUMENT_MACRO; {
+                sanity_assert(panel.view.kind == .DOCUMENT);
+                view := *panel.view._document;
+                document := view.document;
+
+                sanity_assert(document.kind != .COMPILATION);
+                macro := document_macros[userdata.value];
+                execute_document_macro(editor, platform, input, panel, view, document, macro);
             }
 
             case .COMPILATION; {
@@ -332,6 +355,21 @@ build_action_text :: (action: s64, action_name: string, key_map: Key_Map) -> /* 
             first = false;
         }
     }
+
+    return builder_to_string(*sb,, temp);
+}
+
+build_action_text :: (macro: Document_Macro) -> /* Temporary_Storage */ string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    action_padded := temp_right_pad(macro.name, 40);
+    String.to_lower_in_place(action_padded);
+
+    append(*sb, action_padded);
+
+    // TODO(payl) multiple shortcuts
+    shortcut_print_to_builder(macro.shortcut, *sb);
 
     return builder_to_string(*sb,, temp);
 }

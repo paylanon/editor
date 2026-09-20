@@ -96,7 +96,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                         line := eat_line(*lexer);
                         found, left, right := String.split_from_right(line, #char "=");
                         if found {
-                            name := String.trim(left);
+                            name := copy_string(String.trim(left),, arena_allocator(editor.perm_arena));
                             advance(*name);
                             sequence := String.trim(right);
                             array_add(*document_macros, {name=name, action_sequence_str=sequence});

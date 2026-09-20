@@ -4997,7 +4997,7 @@ append_to_mini_panel_history :: (editor: *Editor, platform: Platform, mini_panel
     executed_str: string;
     if mini_panel.use_raw_input_for_history {
         line_view := text_buffer_make_view_for_line(mini_panel.buffer, 0);
-        executed_str = copy_string(line_view);
+        executed_str = copy_string(line_view,, history_allocator);
     } else {
         executed_str = copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, history_allocator);
     }
