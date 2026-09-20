@@ -7,9 +7,13 @@ mini_panel_search_in_project_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    true
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 MIN_SEARCH_TEXT_COUNT :: 3;
 

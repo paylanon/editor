@@ -7,19 +7,26 @@ mini_panel_set_theme_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 #scope_file
 
 BUILTIN_THEME_NAMES  :: #run enum_names(Builtin_Themes);
 
-// NOTE(payl): Only one set of mini-panel procs can be active at
-// a time, so we might as well just put stuff in file scope here.
-
 // Set_Theme_Userdata :: struct { original_theme_index: s64; }
+
+// NOTE(payl): 
+// :MiniPanelFilescope
+// Only one set of mini-panel procs can be active at a time,
+// so we might as well just put stuff in file scope here.
 
 original_theme_index: s64;
 original_item_index:  s64;
+
+// * The resizeable array in here uses history_arena.
+history: Mini_Panel_History;
 
 Set_Theme_Item_Userdata :: struct { theme_index: s64; }
 

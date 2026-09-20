@@ -7,9 +7,13 @@ mini_panel_search_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    true
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 Search_Userdata :: struct {
     original_x: s64; // Not used for listings.

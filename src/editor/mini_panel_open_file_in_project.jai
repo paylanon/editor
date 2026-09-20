@@ -7,9 +7,13 @@ mini_panel_open_file_in_project_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 Open_Project_File_Userdata :: struct {
     working_directory: string;

@@ -7,9 +7,13 @@ mini_panel_switch_view_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 Switch_View_Item_Userdata :: struct {
     kind: View_Kind;

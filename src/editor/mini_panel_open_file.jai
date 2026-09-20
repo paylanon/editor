@@ -7,9 +7,13 @@ mini_panel_open_file_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 Open_File_Item_Userdata :: struct {
     full_file_path: string;

@@ -7,6 +7,8 @@ mini_panel_close_view_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 // TODO(payl): unify **
@@ -29,6 +31,8 @@ close_view :: (editor: *Editor, platform: Platform, input: Input, view: *View) {
 }
 
 #scope_file
+
+history: Mini_Panel_History;
 
 Close_View_Item_Userdata :: struct {
     kind: View_Kind;

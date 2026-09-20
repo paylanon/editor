@@ -7,9 +7,13 @@ mini_panel_show_commands_procs: Mini_Panel_Procs = {
     autocomplete,
     confirm,
     cancel,
+    *history,
+    false
 };
 
 #scope_file
+
+history: Mini_Panel_History;
 
 PANEL_ACTION_NAMES   :: #run enum_names(Panel_Action);
 PANEL_ACTIONS_VALUES :: #run enum_values_as_s64(Panel_Action);
@@ -23,8 +27,10 @@ COMPILATION_ACTION_VALUES :: #run enum_values_as_s64(Compilation_Action);
 LISTING_ACTION_NAMES  :: #run enum_names(Listing_Action);
 LISTING_ACTION_VALUES :: #run enum_values_as_s64(Listing_Action);
 
+Action_Kind :: enum { UNINITIALIZED; PANEL; DOCUMENT; DOCUMENT_MACRO; COMPILATION; LISTING; };
+
 Show_Commands_Item_Userdata :: struct {
-    kind:  enum { UNINITIALIZED; PANEL; DOCUMENT; DOCUMENT_MACRO; COMPILATION; LISTING; };
+    kind:  Action_Kind;
     value: s64;
 }
 
@@ -83,22 +89,45 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
 
         actions_to_search_values: [..] s64;
         actions_to_search_values.allocator = temp;
-
-        array_reserve(*actions_to_search_names, PANEL_ACTION_NAMES.count);
-        array_reserve(*actions_to_search_values, PANEL_ACTION_NAMES.count);
+        
+        array_reserve(*actions_to_search_names, history.elements.count + PANEL_ACTION_NAMES.count);
+        array_reserve(*actions_to_search_values, history.elements.count + PANEL_ACTION_NAMES.count);
+        
+        history_cursor := history.elements.count;
+        history_action_kinds := NewArray(history.elements.count, Action_Kind,, temp);
+        
+        for history.elements {
+            array_add(*actions_to_search_names, {});
+            array_add(*actions_to_search_values, 0);
+        }
+        
+        check_history :: (name: string, kind: Action_Kind) -> bool #expand {
+            if `history_cursor && String.equal_nocase(name, history.elements[`history_cursor-1]) {
+                index := history.elements.count - `history_cursor;
+                `actions_to_search_names[index] = `action_text;
+                `actions_to_search_values[index] = `action;
+                history_action_kinds[index] = kind;
+                `history_cursor -= 1;
+                return true;
+            } else return false;
+        }
+                
         for PANEL_ACTION_NAMES {
             if it != "NONE" {
+                
                 key_map := *editor.panel_key_map;
                 action  := PANEL_ACTIONS_VALUES[it_index];
-
                 action_text := build_action_text(action, it, key_map);
+                
+                if check_history(it, .PANEL) continue;
+                
                 array_add(*actions_to_search_names, action_text);
                 array_add(*actions_to_search_values, action);
             }
         }
         assert(actions_to_search_names.count == actions_to_search_values.count);
 
-        panel_actions_low:  s64 = 0;
+        panel_actions_low:  s64 = history.elements.count;
         panel_actions_high: s64 = actions_to_search_names.count;
 
         document_actions_low:  s64 = actions_to_search_names.count;
@@ -122,8 +151,10 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                         if it != "NONE" {
                             key_map := *editor.compilation_key_map;
                             action  := COMPILATION_ACTION_VALUES[it_index];
-
                             action_text := build_action_text(action, it, key_map);
+                            
+                            if check_history(it, .COMPILATION) continue;
+                            
                             array_add(*actions_to_search_names, action_text);
                             array_add(*actions_to_search_values, action);
                         }
@@ -138,8 +169,10 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                         if it != "NONE" {
                             key_map := *editor.document_key_map;
                             action  := DOCUMENT_ACTION_VALUES[it_index];
-
                             action_text := build_action_text(action, it, key_map);
+                            
+                            if check_history(it, .DOCUMENT) continue;
+                            
                             array_add(*actions_to_search_names, action_text);
                             array_add(*actions_to_search_values, action);
                         }
@@ -150,8 +183,12 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
 
                     for document_macros {
                         action_text := build_action_text(it);
+                        action := it_index;
+                        
+                        if check_history(it.name, .DOCUMENT_MACRO) continue;
+                        
                         array_add(*actions_to_search_names, action_text);
-                        array_add(*actions_to_search_values, it_index);
+                        array_add(*actions_to_search_values, action);
                     }
                     assert(actions_to_search_names.count == actions_to_search_values.count);
 
@@ -165,8 +202,10 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     if it != "NONE" {
                         key_map := *editor.listing_key_map;
                         action  := LISTING_ACTION_VALUES[it_index];
-
                         action_text := build_action_text(action, it, key_map);
+                        
+                        if check_history(it, .LISTING) continue;
+                        
                         array_add(*actions_to_search_names, action_text);
                         array_add(*actions_to_search_values, action);
                     }
@@ -176,6 +215,8 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                 listing_actions_high = actions_to_search_names.count;
             }
         }
+        
+        assert(!history_cursor);
 
         for actions_to_search_names {
             found, found_indices := line_search(it, search_parts, smartcase,, temp);
@@ -195,7 +236,9 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                 userdata.kind = .UNINITIALIZED;
                 userdata.value = actions_to_search_values[it_index];
 
-                if it_index >= panel_actions_low && it_index < panel_actions_high {
+                if it_index < panel_actions_low {
+                    userdata.kind = history_action_kinds[it_index];
+                } else if it_index >= panel_actions_low && it_index < panel_actions_high {
                     userdata.kind = .PANEL;
                 } else if it_index >= document_actions_low && it_index < document_actions_high {
                     userdata.kind = .DOCUMENT;

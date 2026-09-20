@@ -602,8 +602,6 @@ Mini_Panel :: struct {
     items_arena: *Arena;
     items: [..] Item;
     item_index: s64; // [0, items.count) to select a item, -1 to select the mini panel's buffer (if allowed by the action).
-    
-    use_raw_input_for_history: bool;
 
     userdata_arena: *Arena;
     userdata: *void; // Set this by passing it to open_mini_panel. You can allocate it with userdata_arena.
@@ -636,7 +634,17 @@ Mini_Panel_Procs :: struct {
     autocomplete:         Mini_Panel_Autocomplete_Proc;
     confirm:              Mini_Panel_Confirm_Proc;
     cancel:               Mini_Panel_Cancel_Proc;
+
+    history: *Mini_Panel_History; // see :MiniPanelFilescope
+    use_raw_input_for_history: bool;
 }
+
+Mini_Panel_History :: struct {
+    elements: [..] string;
+    cursor: s64;
+}
+
+history_arena: *Arena;
 
 Mini_Panel_Get_Action_Text_Proc      :: #type (editor: *Editor, platform: Platform, input: Input) -> /* Possibly short lifetime */ string;
 Mini_Panel_Can_Select_Text_Line_Proc :: #type (editor: *Editor, platform: Platform, input: Input) -> bool;
@@ -685,6 +693,8 @@ init :: (editor: *Editor, platform: Platform, renderer: Renderer, input: Input) 
     editor.arenas.allocator = arena_allocator(editor.perm_arena);
     array_add(*editor.arenas, editor.perm_arena);
     editor.perm_arena.debug_procs = make_arena_debug_procs(editor);
+    
+    history_arena = make_arena(editor, platform, .MEDIUM, "Mini-Panel History");
 
     editor.debug_frame_profiles = arena_push(editor.perm_arena, Editor.Frame_Profiles);
     {
@@ -2757,7 +2767,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .NONE;  return false;
 
         case .SHOW_COMMANDS;         open_mini_panel(editor, platform, input, mini_panel_show_commands_procs);
-        case .SEARCH;                open_mini_panel(editor, platform, input, mini_panel_search_procs, use_raw_input_for_history=true);
+        case .SEARCH;                open_mini_panel(editor, platform, input, mini_panel_search_procs);
 
         case .OPEN_FILE;             open_mini_panel(editor, platform, input, mini_panel_open_file_procs);
         case .SWITCH_VIEW;           open_mini_panel(editor, platform, input, mini_panel_switch_view_procs);
@@ -2903,7 +2913,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         }
 
         case .OPEN_FILE_IN_PROJECT;             open_mini_panel(editor, platform, input, mini_panel_open_file_in_project_procs);
-        case .SEARCH_IN_PROJECT;                open_mini_panel(editor, platform, input, mini_panel_search_in_project_procs, use_raw_input_for_history=true);
+        case .SEARCH_IN_PROJECT;                open_mini_panel(editor, platform, input, mini_panel_search_in_project_procs);
         case .COMPILE_IN_PROJECT_OR_DIRECTORY;  open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.PROJECT_OR_DIRECTORY));
         case .COMPILE_IN_DIRECTORY;             open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.DIRECTORY));
 
@@ -4953,14 +4963,13 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
     }
 }
 
-open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mini_Panel_Procs, use_raw_input_for_history := false) {
+open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mini_Panel_Procs) {
     mini_panel := *editor.mini_panel;
 
     assert(!mini_panel.open);
 
     mini_panel.procs = procs;
     mini_panel.open = true;
-    mini_panel.use_raw_input_for_history = use_raw_input_for_history;
 
     procs.init(editor, platform, input);
 
@@ -4970,65 +4979,36 @@ open_mini_panel :: (editor: *Editor, platform: Platform, input: Input, procs: Mi
     }
 }
 
-
-// NOTE(payl): Searching by Mini_Panel_Procs to access history is obviously
-// kinda braindead. Maybe persistent mini-panels is the ideal approach?
-// In which case we skip string allocation too, in favor of views.
-
-mini_panel_history: [..] Mini_Panel_History;
-
-Mini_Panel_History :: struct {
-    procs_id: Mini_Panel_Procs;
-    elements: [..] string;
-    cursor: s64;
-}
-
-history_arena: *Arena;
-history_allocator: Allocator;
-
 append_to_mini_panel_history :: (editor: *Editor, platform: Platform, mini_panel: *Mini_Panel) {
 
-    if !mini_panel_history.count {
-        history_arena = make_arena(editor, platform, .MEDIUM, "Mini-Panel History");
-        history_allocator = arena_allocator(history_arena);
-    }
-    
-    // Stash executed string, if any, to history of this specific mini-panel.
+    // Stash executed string, if any, in history of this specific mini-panel.
     executed_str: string;
-    if mini_panel.use_raw_input_for_history {
+    if mini_panel.procs.use_raw_input_for_history {
         line_view := text_buffer_make_view_for_line(mini_panel.buffer, 0);
-        executed_str = copy_string(line_view,, history_allocator);
+        executed_str = copy_string(line_view,, arena_allocator(history_arena));
     } else {
-        executed_str = copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, history_allocator);
+        executed_str = copy_string(String.stop_at_any(mini_panel.items[mini_panel.item_index].text, String.DEFAULT_SPACES),, arena_allocator(history_arena));
     }
     if executed_str {
                 
-        history_target: *Mini_Panel_History;
-                
-        for * mini_panel_history {
-            if !memcmp(*it.procs_id, *mini_panel.procs, size_of(Mini_Panel_Procs)) history_target = it;
-        }
-        
-        if !history_target {
-            array_add(*mini_panel_history, {procs_id=mini_panel.procs},, history_allocator);
-            history_target = peek_pointer(mini_panel_history);
-        }
+        history_target := mini_panel.procs.history;
         
         dupe := history_target.elements.count && (peek(history_target.elements) == executed_str);
                 
-        if !dupe array_add(*history_target.elements, executed_str,, history_allocator);
-                
+        if !dupe {
+            // If executed previously, 'swap' with first occurence.
+            for * history_target.elements if it.* == executed_str it.* = {};
+            
+            array_add(*history_target.elements, executed_str,, arena_allocator(history_arena));
+        }
+        
         history_target.cursor = history_target.elements.count;
     }
 }
 
 walk_mini_panel_history :: (mini_panel: *Mini_Panel, forward: bool) {
     
-    history_target: *Mini_Panel_History;
-    
-    for * mini_panel_history {
-        if !memcmp(*it.procs_id, *mini_panel.procs, size_of(Mini_Panel_Procs)) history_target = it;
-    }
+    history_target := mini_panel.procs.history;
     
     if history_target {
         
@@ -5041,6 +5021,10 @@ walk_mini_panel_history :: (mini_panel: *Mini_Panel, forward: bool) {
                 return;
             }
             next := history_target.elements[history_target.cursor];
+            if !next {
+                walk_mini_panel_history(mini_panel, forward);
+                return;
+            }
             if history_target.cursor == history_target.elements.count {
                 text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
                 return;
@@ -5053,6 +5037,10 @@ walk_mini_panel_history :: (mini_panel: *Mini_Panel, forward: bool) {
             if !history_target.cursor return;
             history_target.cursor -= 1;
             prev := history_target.elements[history_target.cursor];
+            if !prev {
+                walk_mini_panel_history(mini_panel, forward);
+                return;
+            }
             history_target.cursor = max(history_target.cursor, 0);
             text_buffer_delete_all(*mini_panel.buffer, *mini_panel.cursors);
             text_buffer_insert(*mini_panel.buffer, *mini_panel.cursors, prev);
