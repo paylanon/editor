@@ -21,6 +21,10 @@ without dropping a frame. We might need to switch to incremental strategies to g
   The hard limit is 8GB - the size of the per-file memory reservation, but you'll run into problems much sooner.
   (Note that currently the editor crashes if the size limit is exceeded... this will improve)
 
+Fixes:
+
+- Scope parsing now respects strings. Having parentheses (and comments) within strings now won't mess with indentation.
+
 Other:
 
 - Disable automatic stripping of whitespace on save, as it made it difficult to work with source code with different conventions.
