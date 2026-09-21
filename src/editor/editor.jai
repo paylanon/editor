@@ -1,10 +1,18 @@
 /*
 
-TODO(jt): Known bugs:
+TODO(jt): Known critical bugs:
+
+- Jai lexer crashes when we try to write one more f after 0xffff_ffff_ffff_ffff. Line 1110 'digit_accumulator *= base;' has arithmetic overflow.
+- We are not printing the stack trace on arithmetic overflow...
+- Infinite loop when clicking into *scratch* buffer (related to expand_selection?, maybe counting font positions?)
+
+TODO(jt): Known serious bugs:
 
 - Windows: file watching sometimes loops infinitely? we modify a file and keep getting events about it.
 - Clicking on an item in a listing scrolls/selects the resulting document immediately after clicking.
 - Project detection uses substring. This is incorrect. Should use sub-parts.
+- move_forward_word cycles on last line, if there are at least two words and a space after
+- clicking to position the cursor does not clamp scroll back to the beginning. Scroll-selecting does.
 
 TODO(jt): Roadmap:
 
@@ -62,7 +70,7 @@ TODO(jt): Roadmap:
 - [X] Language: C
 - [~] Language: C++ ; Currently serviced by the C lexer
 - [X] Language: GLSL
-- [X] Reading and rendering CRLF
+- [X] Reading and (not) rendering CRLF
 - [X] Disambiguate path prefixes in SWITCH_VIEW, CLOSE_VIEW, and modeline
 - [X] Minimal config files (keybinds, theme, language file association)
 - [X] Prettier modeline layout
@@ -111,7 +119,7 @@ TODO(jt): Roadmap:
 - [ ] Pretty things: blinking cursor, cursor trail, ...
 - [ ] Flash pasted text
 - [ ] Flash text inserted by undo/redo
-- [ ] Writing CRLF
+- [ ] Writing CRLF and CRLF navigation (cursor movement should skip over)
 
 ... after beta ...
 
@@ -131,6 +139,7 @@ f32 :: float32;
 f64 :: float64;
 
 #import "Basic";
+#import "Bit_Operations";
 #import "Arena"(ENABLE_DEBUG = true, ENABLE_SANITY_ASSERTS = SANITY, DEFAULT_OVERWRITE_MEMORY = SANITY);
 // TODO(jt): @Speed We could do a better job at the bucket array without complicating it too much by bitpacking
 // the occupancy mask and having a freelist for insertion.
@@ -1439,7 +1448,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
             }
 
             case .FRAME_PROFILE; {
-                message := "Debug view: Frame profile";
+                message := "Debug view: Frame profile (left=pause+left, right=pause+right, up=unpause)";
                 scissor := Rect.{ 0, 0, window_w, window_h };
                 _font_layout_and_draw_text(*editor.font, message,
                                            *render_commands, *atlas_update_regions,
@@ -1479,7 +1488,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
 
                     PADDING_X :: 20.0;
                     REGULAR_BAR_HEIGHT   :: 150.0;
-                    EXCEEDING_BAR_HEIGHT :: 350.0;
+                    EXCEEDING_BAR_HEIGHT :: 320.0;
                     R_COUNT :: 1.0 / editor.DEBUG_FRAME_PROFILE_COUNT;
 
                     graph_width := max(window_w - 2 * PADDING_X, 0);
@@ -1515,6 +1524,14 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                         profile    := *editor.debug_frame_profiles.entries[displayed_frame_index];
                         time_scale := profile.time_scale;
                         cursor_y := 0;
+
+                        _font_layout_and_draw_text(*editor.font, "zone  label                                                              hits        T(inclusive)        T(exclusive)",
+                                                   *render_commands, *atlas_update_regions,
+                                                   { 0, bar_y + EXCEEDING_BAR_HEIGHT }, scissor,
+                                                   { 1, 1, 1, 1 }, .REGULAR,
+                                                   .[], .[],
+                                                   binary = false);
+
                         for zone, zone_index: profile.zones {
                             s := tprint("% %      %     %     %",
                                         temp_right_pad(tprint("[%]", zone_index), 5),
@@ -1523,13 +1540,15 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                                         formatFloat(1000 * time_scale * zone.elapsed_inclusive, width = 15, trailing_width = 3),
                                         formatFloat(1000 * time_scale * zone.elapsed_exclusive, width = 15, trailing_width = 3));
 
-                            y := bar_y + EXCEEDING_BAR_HEIGHT + zone_index * cell_h;
+                            y := bar_y + EXCEEDING_BAR_HEIGHT + (1 + zone_index) * cell_h;
                             _font_layout_and_draw_text(*editor.font, s,
                                                        *render_commands, *atlas_update_regions,
                                                        { 0, y }, scissor,
                                                        { 1, 1, 1, 1 }, .REGULAR,
                                                        .[], .[],
                                                        binary = false);
+
+                            draw_rect(*render_commands, 0, y, window_w, y + 1, { 0.2, 0.2, 0.2, 1 });
                         }
                     }
                 } else {
@@ -1543,7 +1562,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
             }
 
             case .FRAME_TIMELINE; {
-                message := tprint("Debug view: Frame timeline (blue=update; red=render+VSync; white=refresh(%), informative only)", input.monitor_refresh_rate);
+                message := tprint("Debug view: Frame timeline (blue=update, red=render+VSync, white=refresh(%))", input.monitor_refresh_rate);
                 scissor := Rect.{ 0, 0, window_w, window_h };
                 _font_layout_and_draw_text(*editor.font, message,
                                            *render_commands, *atlas_update_regions,
@@ -2019,6 +2038,7 @@ sync_document_with_filesystem :: (editor: *Editor, platform: Platform, input: In
 
                         cursor_before_reload := document.cursors_cold.c0;
 
+                        // TODO(jt): @Speed This delete takes an enormous amount of time for large files.
                         text_buffer_delete_all(*document.buffer, *document.cursors_cold);
                         text_buffer_insert(*document.buffer, *document.cursors_cold, contents, .FUSE);
                         text_buffer_move_to(document.buffer, *document.cursors_cold, cursor_before_reload, false);
@@ -2366,6 +2386,8 @@ Document_Action :: enum {
 
     DEBUG_PRINT_BYTE_AT_CURSOR;
     DEBUG_INSERT_BENCHMARK_TEXT;
+    DEBUG_BENCHMARK_SCOPE_PARSER;
+    DEBUG_BENCHMARK_C_LEXER;
 }
 
 Compilation_Action :: enum {
@@ -3273,7 +3295,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
-        // TODO(jt): @Bug This doesn't align the comment well across multiple lines.
+        // TODO(jt): @Bug Do detection across all selected lines! If any line is not commented out, we should be commenting.
         case .TOGGLE_COMMENT; {
             line_comment, block_comment_start, block_comment_end := document_get_comment_style(document);
             line_comment_length := count_utf8_chars(line_comment);
@@ -3462,6 +3484,19 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             if !(document.flags & .READONLY) {
                 open_modal_interaction(editor, platform, input, modal_interaction_benchgen_procs);
             }
+        }
+
+        case .DEBUG_BENCHMARK_SCOPE_PARSER; {
+            run_debug_benchmark(editor, platform, #code {
+                update_scopes(document);
+            });
+        }
+
+        case .DEBUG_BENCHMARK_C_LEXER; {
+            document_change_lang(document, .C);
+            run_debug_benchmark(editor, platform, #code {
+                lang_c_update_tokens(document);
+            });
         }
     }
 
@@ -3999,6 +4034,7 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
 
                 if editor.input_state.keys[Key.MB_LEFT] & .PRESSED && editor.input_state.mb_left_multiclicks >= 2 {
                     if editor.input_state.mb_left_multiclicks == 2 {
+                        // TODO(jt): @Bug Keep This selection on the same line.
                         text_buffer_expand_selection(document.buffer, *view.cursors);
                     } else if editor.input_state.mb_left_multiclicks >= 3 {
                         start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y);
@@ -4574,13 +4610,14 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 //
                 {
                     for document.tokens {
-                        if it.loc1.y < viewport_line0  continue; // TODO(jt): @Speed Binary search or skip ahead for the start instead?
                         if it.loc0.y > viewport_line1  break;
+                        if it.loc1.y < viewport_line0  continue; // TODO(jt): @Speed Binary search or skip ahead for the start instead?
+                        if it.loc0 == it.loc1          continue; // Empty token.
 
                         r: Font_Style_Range;
                         r.x0 = it.loc0.x;
                         r.y0 = it.loc0.y - viewport_line0;
-                        r.x1 = it.loc1.x;
+                        r.x1 = it.loc1.x - 1; // Convert from exclusive to inclusive.
                         r.y1 = it.loc1.y - viewport_line0;
 
                         if #complete it.type == {
@@ -5359,8 +5396,6 @@ document_get_comment_style :: (document: Document) -> /* Static */ line: string,
     }
 }
 
-// TODO(jt): @Speed At sizes around ~10MB, even the fastest lexer we have (JAI_Lexer) takes 10 milliseconds to produce tokens.
-// We need to make all lexers faster, so that we can increase the highlighting cutoff.
 document_update_tokens :: (document: *Document) {
     if document.buffer.gb.count > HIGHLIGHT_CUTOFF_SIZE {
         array_reset_keeping_memory(*document.tokens);
@@ -5569,8 +5604,6 @@ run_compilation :: (editor: *Editor, platform: Platform, panel: *Panel) {
     text_buffer_insert(*document.buffer, *view.cursors, "Compiling with args: ", .OMIT);
     text_buffer_insert(*document.buffer, *view.cursors, args, .OMIT);
     text_buffer_insert(*document.buffer, *view.cursors, "\n\n", .OMIT );
-
-    // TODO(jt): @Bug On Windows, compilation returns CRLF output?
 
     time_before := platform.get_current_time_monotonic();
     exit_code, exit_type, output, error := platform.run_in_process(args, working_directory,, temp);
@@ -5922,7 +5955,7 @@ make_arena_debug_procs :: (editor: *Editor) -> Arena_Debug_Procs {
 }
 
 mark_frame_profile :: (editor: *Editor, input: Input) {
-    #assert is_power_of_two(editor.DEBUG_FRAME_PROFILE_COUNT); // So that we can use bit ops modulo.
+    #assert is_nonzero_power_of_two(editor.DEBUG_FRAME_PROFILE_COUNT); // So that we can use bit ops modulo.
 
     if editor.debug_view == .FRAME_PROFILE {
         state := *editor.debug_view_state._frame_profile;
@@ -5951,11 +5984,39 @@ mark_frame_timeline_point :: (editor: *Editor, platform: Platform, input: Input,
         case .END; {
             editor.debug_frame_timeline.entries[editor.debug_frame_timeline_index].time_end = platform.get_current_time_monotonic() - input.time_of_program_start;
 
-            #assert is_power_of_two(editor.DEBUG_FRAME_TIMELINE_COUNT); // So that we can use bit ops modulo.
+            #assert is_nonzero_power_of_two(editor.DEBUG_FRAME_TIMELINE_COUNT); // So that we can use bit ops modulo.
             editor.debug_frame_timeline_index += 1;
             editor.debug_frame_timeline_index &= editor.DEBUG_FRAME_TIMELINE_COUNT - 1;
         }
     }
+}
+
+run_debug_benchmark :: (editor: *Editor, platform: Platform, bench_iteration: Code) #expand {
+    min_elapsed: Apollo_Time = { 0xffff_ffff_ffff_ffff, 0x7fff_ffff_ffff_ffff };
+    max_elapsed: Apollo_Time = { 0, 0 };
+    TIME_LIMIT :: #run milliseconds_to_apollo(1000);
+
+    bench_start := platform.get_current_time_monotonic();
+    bench_runs  := 0;
+    while 1 {
+        auto_release_temp();
+        
+        start := platform.get_current_time_monotonic();
+        #insert bench_iteration;
+        end   := platform.get_current_time_monotonic();
+
+        elapsed := end - start;
+        if elapsed < min_elapsed  min_elapsed = elapsed;
+        if elapsed > max_elapsed  max_elapsed = elapsed;
+
+        bench_runs += 1;
+        if end - bench_start > TIME_LIMIT {
+            break;
+        }
+    }
+
+    editor_log(editor, "Ran % rounds: min % seconds, max % seconds",
+               bench_runs, to_float64_seconds(min_elapsed), to_float64_seconds(max_elapsed));
 }
 
 toggle_debug_view :: (editor: *Editor, value: Editor.Debug_View) {

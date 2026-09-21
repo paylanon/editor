@@ -2,6 +2,8 @@
 
 // TODO(jt): There are no 5-byte or 6-byte utf8 codepoints. Find out what this table should really
 // look like and/or explain. (The table is a modified version of modules/Unicode.trailingBytesForUTF8)
+//
+// Also see UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED.
 UTF8_LENGTH_FOR_STARTING_BYTE :: u8.[
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
@@ -11,6 +13,17 @@ UTF8_LENGTH_FOR_STARTING_BYTE :: u8.[
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
     2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
     3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,6,6,
+];
+
+UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED :: u8.[
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
 ];
 
 // TODO(jt): @Speed @Cleanup This is a deprecated routine from modules/String,
@@ -42,18 +55,18 @@ find_index_from_right :: (s: string, byte: u8, start_index := S64_MAX) -> s64  #
 }
 
 // TODO(jt): @Cleanup This is a simpler overload of slice from modules/String. We should mail this in.
+// An additional modification is the change from assert to sanity_assert+clamp, because asserts harm codegen
+// (verified in beta 0.2.030), producing additional basic blocks and machine code. Real-world performance suffers.
 slice :: inline (s: string, index: s64) -> string {
-    assert(index >= 0, "index = %", index);
+    sanity_assert(index >= 0, "index = %", index);
+    if index < 0         index = 0;       
+    
     if index >= s.count  return "";
 
     c: string = ---;
     c.data    = s.data + index;
     c.count   = s.count - index;
     return c;
-}
-
-count_leading_whitespace_chars :: (bytes: [] u8) -> s64 {
-    return inline count_leading_whitespace_chars(cast(string, bytes));
 }
 
 count_utf8_chars :: (bytes: [] u8) -> s64 {

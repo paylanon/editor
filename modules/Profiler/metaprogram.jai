@@ -128,6 +128,8 @@ message :: (p: *Metaprogram_Plugin, message: *Message) {
                 // polymorphic/autobaked procedure. This is sort of okay, but even if we wanted to
                 // instrument the original procedure, we can't, because the compiler does not send a
                 // message with its body. Maybe we should add the generic parameters into label?
+                //
+                // TODO(jt): @Bug If we put ProfileZone in a (named?) for_expansion, we don't find it here?
 
                 body := tc.expression;
 

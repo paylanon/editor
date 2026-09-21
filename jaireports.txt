@@ -1,6 +1,9 @@
 modules/Basic/Apollo_Time
   filetime_to_apollo defines its own FILETIME_FACTOR while the others use the one defined globally.
   to_filetime has a dead code line: result1 := cast(u64) result; A leftover from debugging?
+  APOLLO_TIME_MIN(_VALID) and APOLLO_TIME_MAX constants would be helpful:
+     APOLLO_TIME_MAX :: Apollo_Time.{ 0xffff_ffff_ffff_ffff, 0x7fff_ffff_ffff_ffff }
+    
 
 modules/File
   get_absolute_path (both Windows and UNIX) doesn't respect context allocator and always returns the result in temp. This is inconsistent and surprising, even if most of the time callers want this.

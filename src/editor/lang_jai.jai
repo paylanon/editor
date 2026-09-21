@@ -3,6 +3,9 @@ LANG_JAI_BLOCK_COMMENT_START :: "/*";
 LANG_JAI_BLOCK_COMMENT_END   :: "*/";
 LANG_JAI_BLOCK_COMMENTS_CAN_NEST :: true;
 
+LANG_JAI_SINGLE_LINE_STRING :: "\"";
+LANG_JAI_MULTI_LINE_STRING  :: "";
+
 LANG_JAI_SURROUND_PAREN_PAIRS: [] Paren_Pair = .[
     { #char "{", #char "}" },
     { #char "(", #char ")" },
@@ -31,13 +34,14 @@ lang_jai_update_tokens :: (document: *Document) {
     // the lexer code a bit.
     lexer: JL.Lexer;
 
-    // TODO(jt): @Speed @Memory This always copies the entire text buffer. This is bad! Instead
-    // split the lexing loop into two and lex on the contents of the gap buffer.
-    start := Text_Location.{ 0, 0 };
-    end   := text_buffer_get_end_of_line(document.buffer, document.buffer.line_count - 1);
-    contents := text_buffer_make_view_for_interval(document.buffer, start, end,, temp);
+    // TODO(jt): @Speed @Memory This always copies the entire text buffer. While this is bad,
+    // it is also much faster than the actual lexing for the sizes of buffers we support lexing for.
+    // When I tried lexing on noncontiguous data (a stripped down gap buffer), this brought additional
+    // complications, such as branching on each index operator, and complicated reconstruction of strings
+    // in lexer_eat_identifier, if those strings crossed the gap. (I tried this for C, which has our own lexer.)
+    contents := gap_buffer_make_view(document.buffer.gb, 0, document.buffer.gb.count,, temp);
 
-    JL.set_input_from_string(*lexer, contents);
+    JL.set_input_from_string(*lexer, cast(string, contents));
 
     last_token_is_pound  := false;
     last_token_is_dollar := false;
@@ -52,16 +56,11 @@ lang_jai_update_tokens :: (document: *Document) {
         if lexer.reported_error            break;
 
         token: Token;
-        // The highlight token interval is inclusive on both sides. This is sort of an arbitrary
-        // choice we can revisit. Note that Jai_Lexer produces end-exclusive horizontal
-        // range and end-inclusive vertical range due to the way set_end_of_token works. To correct
-        // for this, we subtract 2 from c1.
-        //
         // TODO(jt): @Audit @Bug c0 and c1 are likely counting in bytes,
         // but our locations are in characters. Fix!
         token.loc0.x = jl_token.c0 - 1;
         token.loc0.y = jl_token.l0 - 1;
-        token.loc1.x = jl_token.c1 - 2;
+        token.loc1.x = jl_token.c1 - 1;
         token.loc1.y = jl_token.l1 - 1;
 
         // TODO(jt): Modify font to be able to mix in multiple font weights in a single atlas
