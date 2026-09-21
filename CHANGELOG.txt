@@ -6,6 +6,8 @@ New features:
 - Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
   triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
 
+- Directory lister now selects on click, and opens on double-click.
+
 Speed improvements:
 
 - Scope parsing is now faster. kb_text_shape.h parses in 7 ms (previously 17 ms)
