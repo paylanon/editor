@@ -42,6 +42,15 @@ Theme :: struct {
     number_literal_variant: Font_Variant;
     comment_color: Vector4;
     comment_variant: Font_Variant;
+    
+    struct_declaration_color: Vector4;
+    struct_declaration_variant: Font_Variant;
+    enum_declaration_color: Vector4;
+    enum_declaration_variant: Font_Variant;
+    proc_declaration_color: Vector4;
+    proc_declaration_variant: Font_Variant;
+    constant_declaration_color: Vector4;
+    constant_declaration_variant: Font_Variant;
 
     warning_color: Vector4;
     error_color:   Vector4;
@@ -65,54 +74,6 @@ Builtin_Themes :: enum {
     Visual_Studio_Light;
     Sokoban;
 }
-
-
-// * from modules/GetRect
-
-VBase3 :: struct { x, y, z: float; };
-darken :: (color: $T/interface VBase3, t: float) -> T {
-    result: T;
-    result.x = lerp(color.x, 0, t);
-    result.y = lerp(color.y, 0, t);
-    result.z = lerp(color.z, 0, t);
-
-    #if T == Vector4  result.w = color.w;
-
-    return result;
-}
-
-whiten :: (color: $T/interface VBase3, t: float) -> T {
-    hsv := rgb_to_hsv({color.x, color.y, color.z});
-    hsv.y -= t;
-
-    hsv.z += t;
-    Math.Clamp(*hsv.z, 0, 1);
-
-    Math.Clamp(*hsv.y, 0, 1);
-    Math.Clamp(*hsv.z, 0, 1);
-
-    rgb := hsv_to_rgb(hsv);
-
-    result := color;  // Copy other properties like w, or ... whatevs.
-    result.xyz = rgb;
-
-    return result;
-}
-
-brighten :: (color: $T/interface VBase3, value: float) -> T {
-    hsv := rgb_to_hsv({color.x, color.y, color.z});
-
-    hsv.z += value;
-    Math.Clamp(*hsv.z, 0, 1);
-
-    rgb := hsv_to_rgb(hsv);
-
-    result := color;
-    result.xyz = rgb;
-
-    return result;
-}
-
 
 abulafia_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0x50ffa0ff);
@@ -420,7 +381,7 @@ sokoban_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0xc9c9bfff);
     text_color            := unpack_srgba(0xd4c7b4ff);
     background_color      := unpack_srgba(0x111111ff);
-    keyword_color         := unpack_srgba(0xddddddff);    
+    keyword_color         := unpack_srgba(0xddddddff);
     method_color          := unpack_srgba(0xc1d1e3ff);
     highlight_color       := unpack_srgba(0x70a0f0ff);
 
@@ -458,6 +419,11 @@ sokoban_theme :: () -> Theme {
     t.string_literal_color = unpack_srgba(0x9bbfb6ff);
     t.number_literal_color = unpack_srgba(0x92e5cfff);
     t.comment_color        = unpack_srgba(0x869b85ff);
+    
+    t.struct_declaration_color   = unpack_srgba(0xd9e4c9ff);
+    t.enum_declaration_color     = unpack_srgba(0xb1b8beff);
+    t.proc_declaration_color     = unpack_srgba(0xb9b2acff);
+    t.constant_declaration_color = unpack_srgba(0xebe1d3ff);
 
     t.mini_panel_line_color      = cursor_minus_2;
     t.mini_panel_item_text_color = text_color;

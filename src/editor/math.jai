@@ -150,6 +150,10 @@ Rect :: struct {
     #overlay (x1) p1: Vector2;
 }
 
+operator + :: (a: Rect, b: Rect) -> Rect {
+    return { a.x0 + b.x0, a.y0 + b.y0, a.x1 + b.x1, a.y1 + b.y1 };
+}
+
 rect_from_point_and_size :: inline (x0: f32, y0: f32, width: f32, height: f32) -> Rect {
     p0: Vector2 = { x0, y0 };
     p1: Vector2 = { x0 + width, y0 + height};

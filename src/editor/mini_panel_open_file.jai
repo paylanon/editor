@@ -13,6 +13,8 @@ mini_panel_open_file_procs: Mini_Panel_Procs = {
 
 #scope_file
 
+first_init: bool;
+
 history: Mini_Panel_History;
 
 Open_File_Item_Userdata :: struct {
@@ -68,6 +70,8 @@ init :: (editor: *Editor, platform: Platform, input: Input) {
             starting_path = path;
         }
     }
+    
+    if !first_init starting_path = editor.config.home_directory;
 
     mp := *editor.mini_panel;
 
@@ -93,6 +97,8 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
         array_reset(*mp.items);
         arena_reset(mp.items_arena);
 
+        mp.item_index = 0;
+        
         path_text := text_buffer_make_view_for_line(mp.buffer, 0,, temp);
         path_text_char_count := mp.buffer.line_chars[0];
 
@@ -260,6 +266,8 @@ confirm :: (editor: *Editor, platform: Platform, input: Input) -> buffer_changed
 
     open_file(editor, platform, input, file_path);
 
+    if !first_init first_init = true;
+    
     close_mini_panel(editor, platform, input);
 
     return false;

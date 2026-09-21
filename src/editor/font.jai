@@ -298,11 +298,52 @@ Font_Style_Range :: struct {
     using range: Font_Range;
     color: Vector4;
     variant: Font_Variant;
-    comment := false;
+    comment := false; // TEMP
 }
 
 Font_Invert_Range :: struct {
     using range: Font_Range;
+}
+
+get_style_for_token_type :: (editor: *Editor, token_type: Token_Type) -> color: Vector4, variant: Font_Variant {
+    color: Vector4;
+    variant: Font_Variant;
+    
+    if #complete token_type == {
+        // These should not get here, but in case they do, we assign the defaults.
+        case .UNINITIALIZED;   color = editor.theme.text_color; variant = editor.theme.text_variant;
+        case .INVALID;         color = editor.theme.text_color; variant = editor.theme.text_variant;
+        case .END_OF_INPUT;    color = editor.theme.text_color; variant = editor.theme.text_variant;
+        
+        // TODO(jt): @Cleanup While we sort of define color constants for things, we
+        // also can modify bold/italic, for which we have no way of customization
+        // yet. :Config
+        case .KEYWORD;         color = editor.theme.keyword_color; variant = editor.theme.keyword_variant;
+        case .NUMBER_LITERAL;  color = editor.theme.number_literal_color; variant = editor.theme.number_literal_variant;
+        case .STRING_LITERAL;  #through;
+        case .CHAR_LITERAL;    color = editor.theme.string_literal_color; variant = editor.theme.string_literal_variant;
+        
+        // These should not get here, but in case they do, we assign the defaults.
+        case .PUNCTUATION;     color = editor.theme.text_color; variant = editor.theme.text_variant;
+        case .IDENTIFIER;      color = editor.theme.text_color; variant = editor.theme.text_variant;
+        
+        case .ATTRIBUTE;       color = editor.theme.attribute_color; variant = editor.theme.attribute_variant;
+        case .DIRECTIVE;       color = editor.theme.directive_color; variant = editor.theme.directive_variant;
+        
+        case .LINE_COMMENT;    #through;
+        case .BLOCK_COMMENT;   color = editor.theme.comment_color; variant = editor.theme.comment_variant;
+        
+        
+        case .STRUCT_DECLARATION;    color = editor.theme.struct_declaration_color; variant = editor.theme.struct_declaration_variant;
+        case .ENUM_DECLARATION;      color = editor.theme.enum_declaration_color; variant = editor.theme.enum_declaration_variant;
+        case .PROC_DECLARATION;      color = editor.theme.proc_declaration_color; variant = editor.theme.proc_declaration_variant;
+        case .CONSTANT_DECLARATION;  color = editor.theme.constant_declaration_color; variant = editor.theme.constant_declaration_variant;
+        
+        case .TYPE_IDENTIFIER;       color = editor.theme.struct_declaration_color; variant = editor.theme.struct_declaration_variant;
+        case .PROC_CALL;             color = editor.theme.proc_declaration_color; variant = editor.theme.proc_declaration_variant;
+    }
+    
+    return color, variant;
 }
 
 font_layout_and_draw_text :: (font: *Font, text: string,
@@ -425,17 +466,17 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
         // TODO(payl): pull from theme
         
         if comment_todo {
-            glyph_color = unpack_srgba(0xc49191ff);
+            glyph_color = lerp(glyph_color, {1, 0, 0, 1}, 0.2);
             comment_todo -= 1;
         }
 
         if comment_note {
-            glyph_color = unpack_srgba(0xdac6abff);
+            glyph_color = lerp(whiten(glyph_color, 0.06), {1, .4, 0, 1}, 0.1);
             comment_note -= 1;
         }
 
         if comment_tag {
-            glyph_color = whiten(glyph_color, 0.1);
+            glyph_color = lerp(whiten(glyph_color, 0.06), {1, .4, 0, 1}, 0.04);
             comment_tag -= 1;
         }
         

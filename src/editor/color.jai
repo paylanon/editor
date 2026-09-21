@@ -139,6 +139,52 @@ hsv_to_rgb :: (hsv: Vector3) -> Vector3 {
     else             return { v, p, q };
 }
 
+// * from modules/GetRect
+
+VBase3 :: struct { x, y, z: float; };
+darken :: (color: $T/interface VBase3, t: float) -> T {
+    result: T;
+    result.x = lerp(color.x, 0, t);
+    result.y = lerp(color.y, 0, t);
+    result.z = lerp(color.z, 0, t);
+
+    #if T == Vector4  result.w = color.w;
+
+    return result;
+}
+
+whiten :: (color: $T/interface VBase3, t: float) -> T {
+    hsv := rgb_to_hsv({color.x, color.y, color.z});
+    hsv.y -= t;
+
+    hsv.z += t;
+    Math.Clamp(*hsv.z, 0, 1);
+
+    Math.Clamp(*hsv.y, 0, 1);
+    Math.Clamp(*hsv.z, 0, 1);
+
+    rgb := hsv_to_rgb(hsv);
+
+    result := color;  // Copy other properties like w, or ... whatevs.
+    result.xyz = rgb;
+
+    return result;
+}
+
+brighten :: (color: $T/interface VBase3, value: float) -> T {
+    hsv := rgb_to_hsv({color.x, color.y, color.z});
+
+    hsv.z += value;
+    Math.Clamp(*hsv.z, 0, 1);
+
+    rgb := hsv_to_rgb(hsv);
+
+    result := color;
+    result.xyz = rgb;
+
+    return result;
+}
+
 #scope_file
 
 // From D3DX_DXGIFormatConvert.inl.

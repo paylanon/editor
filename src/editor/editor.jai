@@ -8,6 +8,10 @@ TODO(jt): Known bugs:
 
 TODO(jt): Roadmap:
 
+- [ ] Flash pasted text
+- [ ] Flash text inserted by undo/redo
+- [ ] M-u, M-l (upcase/downcase word and move cursor)
+
 - [X] Display text on screen
 - [X] Nice font rendering
 - [X] Gap Buffer (or other text datastructure)
@@ -72,7 +76,6 @@ TODO(jt): Roadmap:
 - [X] C-: or double-click (expand region)
 - [X] Triple click to select line. (expand to line)
 - [ ] C-u C-<space> (cursor undo)
-- [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] Speed improvements to scope parsing
 - [ ] Speed improvements to lexing for syntax highlighting
 - [ ] M-q (reflow)
@@ -109,8 +112,6 @@ TODO(jt): Roadmap:
 - [ ] Render subtle symbols for whitespace characters (space, tab, cr, lf)
 - [ ] Support for dropping files into the window
 - [ ] Pretty things: blinking cursor, cursor trail, ...
-- [ ] Flash pasted text
-- [ ] Flash text inserted by undo/redo
 - [ ] Writing CRLF
 
 ... after beta ...
@@ -303,7 +304,11 @@ Editor :: struct {
     left_view_panel_index: s64;
     right_view_panel_index: s64;
 
-    mini_panel: Mini_Panel;
+    mini_panel:   Mini_Panel;
+    
+    embark_panel: Mini_Panel;
+    embark_mode: Embark_Mode;
+    
     modal_interaction: Modal_Interaction;
 
     messages: [..] Editor_Message;
@@ -322,6 +327,12 @@ Editor :: struct {
     debug_frame_timeline: *Frame_Timeline;
     debug_frame_timeline_index: s64;
 
+    Embark_Mode :: enum u8 {
+        ACT_ON_WORD_AT_POINT;
+        ACT_ON_MINI_PANEL;
+        ACT_ON_MINI_PANEL_ITEM;
+    }
+    
     Debug_View :: enum u8 {
         NONE;
         ATLAS_TEXTURE;
@@ -420,8 +431,6 @@ Document_View :: struct {
 
     cursors: Text_Cursors;
     selecting: bool;
-
-    cursor_mark: Text_Location; // TODO(payl)
 
     recording_macro: bool;
     
@@ -608,6 +617,8 @@ Mini_Panel :: struct {
 
     Item :: struct {
         text: string;
+        text_color: Vector4;
+        
         flags: Flags;
         highlight_x0: s64;
         highlight_x1: s64;
@@ -693,8 +704,10 @@ init :: (editor: *Editor, platform: Platform, renderer: Renderer, input: Input) 
     editor.arenas.allocator = arena_allocator(editor.perm_arena);
     array_add(*editor.arenas, editor.perm_arena);
     editor.perm_arena.debug_procs = make_arena_debug_procs(editor);
+
+    editor.config.arena = make_arena(editor, platform, .SMALL, "Config");
     
-    history_arena = make_arena(editor, platform, .MEDIUM, "Mini-Panel History");
+    history_arena = make_arena(editor, platform, .SMALL, "Mini-Panel History");
 
     editor.debug_frame_profiles = arena_push(editor.perm_arena, Editor.Frame_Profiles);
     {
@@ -1159,7 +1172,8 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                       mini_panel_x0 + cast(f32, cursor0_x), mini_panel_y,
                       mini_panel_x0 + cast(f32, cursor1_x), mini_panel_y + cell_h,
                       editor.theme.selection_color);
-            draw_rect(*render_commands,
+            
+            if !editor.embark_panel.open draw_rect(*render_commands,
                       mini_panel_x0 + cast(f32, cursor0_x), mini_panel_y,
                       mini_panel_x0 + cast(f32, cursor0_x) + cursor_w, mini_panel_y + cell_h,
                       editor.theme.cursor_color);
@@ -1220,7 +1234,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                 }
 
                 offset_y: f64 = mini_panel_y + (it_index + 1) * cell_h;
-                color := editor.theme.mini_panel_item_text_color;
+                color := ifx item.text_color != {} then item.text_color else editor.theme.mini_panel_item_text_color;
                 if item.flags & .WARNING {
                     color = editor.theme.mini_panel_item_warning_text_color;
                 }
@@ -2163,28 +2177,36 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
             }
         }
 
+        case .NEXT_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, true);
+            buffer_changed = true;
+        }
+
+        case .PREVIOUS_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, false);
+            buffer_changed = true;
+        }
+                
+        case .EMBARK_ACT; {
+            editor.embark_panel.open ^= true;
+        }
+
         case .CONFIRM; {
 
             append_to_mini_panel_history(editor, platform, mp);
         
             buffer_changed |= mp.procs.confirm(editor, platform, input);
         }
-        
-        case .NEXT_HISTORY_ELEMENT; {
-            walk_mini_panel_history(mp, true);
-            buffer_changed = true;
-        }
-    
-        case .PREVIOUS_HISTORY_ELEMENT; {
-            walk_mini_panel_history(mp, false);
-            buffer_changed = true;
-        }
 
         case .CANCEL_OR_STOP_SELECTING; {
+            if editor.embark_panel.open {
+                editor.embark_panel.open = false;
+            }
             if mp.selecting {
                 text_cursors_join(*mp.cursors);
                 mp.selecting = false;
             } else {
+                if mp.procs.use_raw_input_for_history append_to_mini_panel_history(editor, platform, mp);
                 mp.procs.cancel(editor, platform, input);
             }
         }
@@ -2333,13 +2355,14 @@ Panel_Action :: enum {
 
     // Things below could be in Global_Action, if we ever create it.
 
+    EMBARK_ACT;
+    
     FONT_SIZE_INCREASE;
     FONT_SIZE_DECREASE;
     FONT_SUBPIXEL_RENDERING_ENABLE;
     FONT_SUBPIXEL_RENDERING_DISABLE;
     
     SET_THEME;
-    
     RELOAD_CONFIG;
 
     DEBUG_VIEW_ATLAS_TEXTURE;
@@ -2539,8 +2562,10 @@ Mini_Panel_Action :: enum {
     PREVIOUS_HISTORY_ELEMENT;
     NEXT_HISTORY_ELEMENT;
     
+    EMBARK_ACT;
+    
     CONFIRM;
-    CANCEL_OR_STOP_SELECTING;
+    CANCEL_OR_STOP_SELECTING;    
 }
 
 Modal_Interaction_Action :: enum {
@@ -2762,7 +2787,7 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
 
 execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, panel: *Panel, action: Panel_Action) -> executed: bool {
     theme_changed := false;
-
+    
     if #complete action == {
         case .NONE;  return false;
 
@@ -2773,7 +2798,7 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .SWITCH_VIEW;           open_mini_panel(editor, platform, input, mini_panel_switch_view_procs);
         case .CLOSE_VIEW;            open_mini_panel(editor, platform, input, mini_panel_close_view_procs);
 
-        case .RECENTER;              recenter_panel(panel, editor, input);
+        case .RECENTER;              recenter_panel(panel, editor, input, skip_interpolation=true);
         case .MOVE_UP_ONE_SCREEN;    scroll_panel_up_one_screen(panel, input, editor.font.line_height_in_pixels);
         case .MOVE_DOWN_ONE_SCREEN;  scroll_panel_down_one_screen(panel, input, editor.font.line_height_in_pixels);
 
@@ -2917,6 +2942,10 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .COMPILE_IN_PROJECT_OR_DIRECTORY;  open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.PROJECT_OR_DIRECTORY));
         case .COMPILE_IN_DIRECTORY;             open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.DIRECTORY));
 
+        case .EMBARK_ACT; {
+            editor.embark_panel.open ^= true;
+        }
+        
         case .FONT_SIZE_INCREASE;               editor.font_size += 1;
         case .FONT_SIZE_DECREASE;               editor.font_size = max(editor.font_size - 1, 1);
         case .FONT_SUBPIXEL_RENDERING_ENABLE;   font_reset_for_options(*editor.font, editor.font.pixel_height, editor.font.line_height_multiplier, true); editor_log(editor, "Subpixel rendering on");
@@ -4773,31 +4802,13 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                         r.y0 = it.loc0.y - viewport_line0;
                         r.x1 = it.loc1.x;
                         r.y1 = it.loc1.y - viewport_line0;
-
-                        if #complete it.type == {
-                            // These should not get here, but in case they do, we assign the defaults.
-                            case .UNINITIALIZED;   r.color = editor.theme.text_color; r.variant = editor.theme.text_variant;
-                            case .INVALID;         r.color = editor.theme.text_color; r.variant = editor.theme.text_variant;
-                            case .END_OF_INPUT;    r.color = editor.theme.text_color; r.variant = editor.theme.text_variant;
-
-                            // TODO(jt): @Cleanup While we sort of define color constants for things, we
-                            // also can modify bold/italic, for which we have no way of customization
-                            // yet. :Config
-                            case .KEYWORD;         r.color = editor.theme.keyword_color; r.variant = editor.theme.keyword_variant;
-                            case .NUMBER_LITERAL;  r.color = editor.theme.number_literal_color; r.variant = editor.theme.number_literal_variant;
-                            case .STRING_LITERAL;  #through;
-                            case .CHAR_LITERAL;    r.color = editor.theme.string_literal_color; r.variant = editor.theme.string_literal_variant;
-
-                            // These should not get here, but in case they do, we assign the defaults.
-                            case .PUNCTUATION;     r.color = editor.theme.text_color; r.variant = editor.theme.text_variant;
-                            case .IDENTIFIER;      r.color = editor.theme.text_color; r.variant = editor.theme.text_variant;
-
-                            case .ATTRIBUTE;       r.color = editor.theme.attribute_color; r.variant = editor.theme.attribute_variant;
-                            case .DIRECTIVE;       r.color = editor.theme.directive_color; r.variant = editor.theme.directive_variant;
-
-                            case .LINE_COMMENT;    #through;
-                            case .BLOCK_COMMENT;   r.color = editor.theme.comment_color; r.variant = editor.theme.comment_variant; r.comment = true;
-                        }
+                        
+                        r.color, r.variant = get_style_for_token_type(editor, it.type);
+                        
+                        if it.type == .LINE_COMMENT || it.type == .BLOCK_COMMENT r.comment = true;
+                        
+                        // fallback to text_color for anything missing from theme proc
+                        if r.color == {} r.color = editor.theme.text_color;
 
                         array_add(*style_ranges, r);
                     }
@@ -4828,40 +4839,8 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                                           style_ranges, invert_ranges,
                                           binary = document.buffer.binary_mode);
             }
-
-            //
-            // Draw modeline
-            //
-            {
-                // TODO(jt): @Cleanup Reformulate the modeline rect as cutting into the current panel instead of using absolute coordinates.
-                modeline_y      := ifx editor.mini_panel.open then window_h - (MINI_PANEL_LINES + 2) * cell_h else window_h - 2 * cell_h;
-                modeline_rect   := rect_from_point_and_size(panel_x, modeline_y, panel_w, cell_h);
-                modeline_offset := DVector2.{ panel_x, modeline_y };
-
-                set_scissor(render_commands, modeline_rect);
-                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color else editor.theme.modeline_color_inactive);
-                
-                text_color := ifx panel_is_active then editor.theme.system_text_color else editor.theme.system_text_color_inactive;
-                
-                cursor  := view.cursors.c0;
-                percent := cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
-
-                document_name := get_document_name(editor, document);
-                document_lang := get_document_lang(document);
-
-                left_part  := tprint("% %", temp_right_pad(document_lang, 10), document_name);
-                right_part := tprint("%\% L% C%", percent, cursor.y + 1, temp_right_pad(tprint("%", cursor.x + 1), 4));
-
-                padding := cast(s64, round(panel_w / cell_w)) - count_utf8_chars(left_part) - 10;
-                s := tprint("     % %", left_part, temp_left_pad(right_part, padding));
-
-                _font_layout_and_draw_text(*editor.font, s,
-                                           render_commands, atlas_update_regions,
-                                           modeline_offset, modeline_rect,
-                                           text_color, .REGULAR,
-                                           .[], .[],
-                                           binary = false);
-            }
+            
+            draw_modeline(editor, panel);
         }
 
         case .LISTING; {
@@ -4927,39 +4906,83 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                                            binary = false);
             }
 
-            //
-            // Draw modeline
-            //
-            {
-                // TODO(jt): @Cleanup Reformulate the modeline rect as cutting into the current panel instead of using absolute coordinates.
-                modeline_y      := ifx editor.mini_panel.open then window_h - (MINI_PANEL_LINES + 2) * cell_h else window_h - 2 * cell_h;
-                modeline_rect   := rect_from_point_and_size(panel_x, modeline_y, panel_w, cell_h);
-                modeline_offset := DVector2.{ panel_x, modeline_y };
-
-                set_scissor(render_commands, modeline_rect);
-                draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color else editor.theme.modeline_color_inactive);
-                
-                text_color := ifx panel_is_active then editor.theme.system_text_color else editor.theme.system_text_color_inactive;
-
-                item_index := view.item_index;
-                percent := cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
-
-                listing_name := get_listing_name(editor, listing);
-
-                left_part  := tprint("Directory  %", listing_name);
-                right_part := tprint("%\% L%    ", percent, item_index + 1);
-
-                padding := cast(s64, round(panel_w / cell_w)) - count_utf8_chars(left_part) - 10;
-                s := tprint("     % %", left_part, temp_left_pad(right_part, padding));
-
-                _font_layout_and_draw_text(*editor.font, s,
-                                           render_commands, atlas_update_regions,
-                                           modeline_offset, modeline_rect,
-                                           text_color, .REGULAR,
-                                           .[], .[],
-                                           binary = false);
-            }
+            draw_modeline(editor, panel);
         }
+    }
+}
+
+// TODO(payl) drop messy #expand
+draw_modeline :: (editor: *Editor, panel: Panel) #expand {
+    
+    // TODO(jt): @Cleanup Reformulate the modeline rect as cutting into the current panel instead of using absolute coordinates.
+    modeline_y      := ifx editor.mini_panel.open then `window_h - (MINI_PANEL_LINES + 2) * `cell_h else `window_h - 2 * `cell_h;
+    modeline_rect   := rect_from_point_and_size(`panel_x, modeline_y, `panel_w, `cell_h);
+    modeline_offset := DVector2.{ `panel_x, modeline_y };
+    
+    set_scissor(`render_commands, modeline_rect);
+    draw_rect(`render_commands, modeline_rect, ifx `panel_is_active then editor.theme.modeline_color else editor.theme.modeline_color_inactive);
+    
+    text_color := ifx `panel_is_active then editor.theme.system_text_color else editor.theme.system_text_color_inactive;
+    
+    left_text:  string;
+    right_text: string;
+    
+    if panel.view.kind == {
+        case .DOCUMENT; {
+            view := *panel.view._document;
+            document := view.document;
+            
+            cursor  := view.cursors.c0;
+            percent := cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
+            
+            document_name := get_document_name(editor, document);
+            document_lang := get_document_lang(document);
+            
+            left_text  = tprint("% %", temp_right_pad(document_lang, 10), document_name);
+            right_text = tprint("%\% L% C%", percent, cursor.y + 1, temp_right_pad(tprint("%", cursor.x + 1), 4));
+        }
+        case .LISTING; {
+            view := *panel.view._listing;
+            listing := view.listing;
+            
+            item_index := view.item_index;
+            percent := cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
+            
+            listing_name := get_listing_name(editor, listing);
+            
+            left_text  = tprint("Directory  %", listing_name);
+            right_text = tprint("%\% L%    ", percent, item_index + 1);
+        }
+    }
+    
+    draw_embark := `panel_is_active && editor.embark_panel.open;
+    
+    EMBARK_SYMBOL :: "^[Emb]";
+    if draw_embark right_text = tprint("%  %", EMBARK_SYMBOL, right_text);
+    
+    padding := cast(s64, round(`panel_w / `cell_w)) - count_utf8_chars(left_text) - 10;
+    s := tprint("     % %", left_text, temp_left_pad(right_text, padding));
+    
+    _font_layout_and_draw_text(*editor.font, s,
+                               `render_commands, `atlas_update_regions,
+                               modeline_offset, modeline_rect,
+                               text_color, .REGULAR,
+                               .[], .[],
+                               binary = false);
+    
+    // Draw embark panel
+    
+    if draw_embark {
+        
+        // TODO(payl) :Config
+        embark_y    := modeline_y - 13 * `cell_h;
+        embark_rect := rect_from_point_and_size(`panel_x + padding * `cell_w, embark_y, 20 * `cell_w, 12 * `cell_h);
+        
+        set_scissor(`render_commands, embark_rect);
+        draw_rect(`render_commands, embark_rect, editor.theme.directive_color);
+        
+        embark_rect += {1, 1, -1, -2};
+        draw_rect(`render_commands, embark_rect, darken(editor.theme.background_color, 0.1));
     }
 }
 

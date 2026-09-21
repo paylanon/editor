@@ -95,7 +95,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     new_item_index := -1;
                     
                     for document.tokens {
-                        if it.type != .IDENTIFIER continue;
+                        if !(it.type == .STRUCT_DECLARATION || it.type == .ENUM_DECLARATION || it.type == .PROC_DECLARATION) continue;
                         
                         token := it;
                         token.loc1.x += 1;
@@ -109,14 +109,20 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                             
                             x0 := count_utf8_chars(String.slice(ident, 0, found_index));
                             
-                            highlight := array_add(*panel.highlights);
-                            highlight.x0 = token.loc0.x;
-                            highlight.x1 = token.loc1.x;
-                            highlight.y  = token.loc1.y;
+                            // highlight := array_add(*panel.highlights);
+                            // highlight.x0 = token.loc0.x;
+                            // highlight.x1 = token.loc1.x;
+                            // highlight.y  = token.loc1.y;
                             
                             item_index := mini_panel.items.count;
                             item := array_add(*mini_panel.items);
+                            
+                            // NOTE(payl): We could annotate with line number and declaration
+                            // type, but I figured text color can get that across without the
+                            // need for string alloc.
+                            
                             item.text = ident;
+                            item.text_color = get_style_for_token_type(editor, it.type);
                             item.highlight_x0 = x0;
                             item.highlight_x1 = x0 + search_part1_char_count;
                             

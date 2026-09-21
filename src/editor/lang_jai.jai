@@ -73,14 +73,31 @@ lang_jai_update_tokens :: (document: *Document) {
 
         if jl_token.type == {
             
-            // NOTE(payl): Let an IDENTIFIER token be any IDENT that precedes double colon.
-            // We can improve the imenu by splitting them into struct, enum and proc per the
-            // next token, but in this way the lexer can be kept as is.
+            // NOTE(payl): Let imenu items be any IDENT that precedes double colon.
+            // We can split into struct, enum and proc per the next token for sorting 
+            // or syntax highlighting, but the lexer can otherwise be kept as is.
+            
+            // * If double colon becomes an operator/punctutation token,
+            // we should swap the last two tokens after adding the ident.
             
             case #char ":"; {
                 if last_token_is_colon {
                     token = last_ident_token;
-                    token.type = .IDENTIFIER;
+                    // token.type = .IDENTIFIER;
+                    next_jl_token := JL.peek_next_token(*lexer,, temp);
+                    if next_jl_token.type == {
+                        case .KEYWORD_STRUCT; token.type = .STRUCT_DECLARATION;
+                        case .KEYWORD_ENUM; token.type = .ENUM_DECLARATION;
+                        case #char "("; token.type = .PROC_DECLARATION;
+                        case; token.type = .CONSTANT_DECLARATION;
+                    }
+                }
+            }
+                                     
+            case #char "("; {
+                if last_ident_token.type {
+                    token = last_ident_token;
+                    token.type = .PROC_CALL;
                 }
             }
         
@@ -92,6 +109,9 @@ lang_jai_update_tokens :: (document: *Document) {
                 } else if last_token_is_double_dollar {
                     token.type = .DIRECTIVE;
                     token.loc0.x -= 2;
+                } else if last_token_is_colon {
+                    next_jl_token := JL.peek_next_token(*lexer,, temp);
+                    if next_jl_token.type != #char "." token.type = .TYPE_IDENTIFIER;
                 }
             }
 
@@ -118,6 +138,8 @@ lang_jai_update_tokens :: (document: *Document) {
                 }
             }
         }
+                         
+        if jl_token.type != .IDENT last_ident_token.type = .UNINITIALIZED;
 
         last_token_is_pound  = jl_token.type == #char "#";
         last_token_is_colon  = jl_token.type == #char ":";

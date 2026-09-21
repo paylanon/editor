@@ -30,12 +30,21 @@ Token_Type :: enum u32 {
     // OPERATOR;
     // TYPE;
     IDENTIFIER;
-
+    
     DIRECTIVE; // Preprocessor directive in C. Compiler directive in JAI. Macro invocation in Rust.
     ATTRIBUTE; // [[attribute]] or __attribute__() in C. @Note in JAI, #[attribute] in Rust, [Attribute] in C#;
 
     LINE_COMMENT;
     BLOCK_COMMENT;
+    
+    
+    STRUCT_DECLARATION;
+    ENUM_DECLARATION;
+    PROC_DECLARATION;
+    CONSTANT_DECLARATION;
+    
+    TYPE_IDENTIFIER;
+    PROC_CALL;
 }
 
 Lexer :: struct {

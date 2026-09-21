@@ -1,8 +1,12 @@
 CONFIG_VERSION :: 1;
 
 Global_Config :: struct {
+    arena: *Arena;
     
     theme: string;
+    
+    home_directory:   string;
+    // config_directory: string;
     
     panel_scroll_duration:                  f32 = 0.15;
     cursor_flash_duration:                  f32 = 0.50;
@@ -42,9 +46,10 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
     config_keybinds_mp.allocator = temp;
     config_keybinds_mi.allocator = temp;
 
-    section := Config_Section.GLOBAL;
-
+    arena_reset(editor.config.arena);
     array_reset(*document_macros);
+    
+    section := Config_Section.GLOBAL;
     
     while 1 {
         eat_whitespace(*lexer);
@@ -96,7 +101,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                         line := eat_line(*lexer);
                         found, left, right := String.split_from_right(line, #char "=");
                         if found {
-                            name := copy_string(String.trim(left),, arena_allocator(editor.perm_arena));
+                            name := copy_string(String.trim(left),, arena_allocator(editor.config.arena));
                             advance(*name);
                             sequence := String.trim(right);
                             array_add(*document_macros, {name=name, action_sequence_str=sequence});
@@ -397,7 +402,7 @@ parse_global_config_pair :: (config: *Global_Config, key: string, value: string)
     if target_type == {
         case string;
             str_val := p.(*string);
-            str_val.* = value;
+            str_val.* = copy_string(value,, arena_allocator(config.arena));
             return true;
         case f32;
             float_val := p.(*f32);
