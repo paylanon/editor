@@ -377,7 +377,6 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
         key_map.buffered_input.count += 1;
 
         has_candidates := false;
-
         for key_map.registered_shortcuts {
             if shortcut_begins_with_nocase(it, key_map.buffered_input) {
                 has_candidates = true;

@@ -62,6 +62,7 @@ build :: () {
     do_sanity          := true;
     do_windows_console := true;
     do_bundle          := false;
+    use_ld3d           := false;
 
     // Match on commandline received by the default metaprogram so that we can tweak its decisions.
     // We try to respect it as much as possible, but we also provide the same switches.
@@ -98,6 +99,7 @@ build :: () {
             case "-no-windows-console";  do_windows_console = false;
             case "-bundle";              do_bundle = true;
             case "-no-bundle";           do_bundle = false;
+            case "-ld3d";                use_ld3d = true;
             case; {
                 log_error("Unknown argument '%'. Pass -help to print allowed options.\nExiting.", it);
                 exit(1);
@@ -115,6 +117,19 @@ build :: () {
     options.output_executable_name = "editor";
     options.output_path            = "build";
     options.intermediate_path      = "build/.build";
+    
+    renderer: string;
+    if use_ld3d {
+        
+        using options;
+        add_import := NewArray(import_path.count+1, string);
+        add_import[0] = "../limbowalker/engine/modules";
+        memcpy(*add_import[1], import_path.data, import_path.count * size_of(string));
+        import_path = add_import;
+
+        renderer = "ld3d";
+        
+    } else renderer = "simp";
 
     if #complete optimization_level == {
         case .DEBUG; {
@@ -145,7 +160,7 @@ build :: () {
     build_info := tprint(BUILD_INFO_TEMPLATE, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH,
                          build_timestamp.day_of_month_starting_at_0 + 1,
                          month_text(build_timestamp.month_starting_at_0),
-                         build_timestamp.year);
+                         build_timestamp.year, renderer);
 
     add_build_string(build_info, w);
 
@@ -176,6 +191,8 @@ build :: () {
     compiler_end_intercept(w);
 
     if !compilation_failed && do_bundle {
+        // TODO(jt): Make all bundles copy to a dist directory. macOS currently goes to root,
+        // and Windows to build (which interferes with regular dev process).
         #if OS == .WINDOWS {
             make_windows_bundle(options);
         } else #if OS == .MACOS {
@@ -196,6 +213,7 @@ __VERSION_MAJOR    :: %;
 __VERSION_MINOR    :: %;
 __VERSION_PATCH    :: %;
 __BUILD_TIMESTAMP  :: "% % %";
+__RENDERER         :: "%";
 DONE;
 
 HELP :: #string DONE

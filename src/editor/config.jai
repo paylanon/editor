@@ -50,7 +50,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
     array_reset(*document_macros);
     
     section := Config_Section.GLOBAL;
-    
+
     while 1 {
         eat_whitespace(*lexer);
 
@@ -58,7 +58,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
             break;
         }
 
-        if String.starts_with(lexer.input, SECTION_OPEN) {
+        if String.begins_with(lexer.input, SECTION_OPEN) {
             success= , parsed_section := parse_section(*lexer);
             if !success {
                 editor_log(editor, "Failed to parse section on line %", lexer.line_index + 1);

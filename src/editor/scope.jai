@@ -26,8 +26,6 @@ Scope :: struct {
 //
 // (This is how things can look when we switch from a single-line parenthesized block to a multiline one.)
 
-// TODO(jt): @Bug If a comment starts in a string, it continues. Need to track strings.
-
 // TODO(jt): @Speed When we indent the entirety of a 10000-line document, this takes ~8 seconds. Even if
 // we SIMD this, it will traverse the whole document contents too many times. We need an incremental
 // version, or perhaps some cooperative version that can work well with indenting large regions.
@@ -48,191 +46,35 @@ update_scopes :: (document: *Document) {
     if document.buffer.binary_mode                         return;
     if document.buffer.gb.count > INDENTATION_CUTOFF_SIZE  return;
 
-
-    indentation_pairs: [] Paren_Pair;
-    line_comment: string;
-    block_comment_start: string;
-    block_comment_end: string;
-    block_comments_can_nest: bool;
-
     if #complete document.lang == {
         case .TEXT; {
-            indentation_pairs       = TEXT_INDENTATION_PAREN_PAIRS;
+            _update_scopes(document, TEXT_INDENTATION_PAREN_PAIRS,
+                           "",
+                           "", "", false,
+                           "", "");
         }
         case .C; {
-            indentation_pairs       = LANG_C_INDENTATION_PAREN_PAIRS;
-            line_comment            = LANG_C_LINE_COMMENT;
-            block_comment_start     = LANG_C_BLOCK_COMMENT_START;
-            block_comment_end       = LANG_C_BLOCK_COMMENT_END;
-            block_comments_can_nest = LANG_C_BLOCK_COMMENTS_CAN_NEST;
+            _update_scopes(document, LANG_C_INDENTATION_PAREN_PAIRS,
+                           LANG_C_LINE_COMMENT,
+                           LANG_C_BLOCK_COMMENT_START, LANG_C_BLOCK_COMMENT_END, LANG_C_BLOCK_COMMENTS_CAN_NEST,
+                           LANG_C_SINGLE_LINE_STRING, LANG_C_MULTI_LINE_STRING);
         }
         case .JAI; {
-            indentation_pairs       = LANG_JAI_INDENTATION_PAREN_PAIRS;
-            line_comment            = LANG_JAI_LINE_COMMENT;
-            block_comment_start     = LANG_JAI_BLOCK_COMMENT_START;
-            block_comment_end       = LANG_JAI_BLOCK_COMMENT_END;
-            block_comments_can_nest = LANG_JAI_BLOCK_COMMENTS_CAN_NEST;
+            _update_scopes(document, LANG_JAI_INDENTATION_PAREN_PAIRS,
+                           LANG_JAI_LINE_COMMENT,
+                           LANG_JAI_BLOCK_COMMENT_START, LANG_JAI_BLOCK_COMMENT_END, LANG_JAI_BLOCK_COMMENTS_CAN_NEST,
+                           LANG_JAI_SINGLE_LINE_STRING, LANG_JAI_MULTI_LINE_STRING);
         }
         case .GLSL; {
-            indentation_pairs       = LANG_GLSL_INDENTATION_PAREN_PAIRS;
-            line_comment            = LANG_GLSL_LINE_COMMENT;
-            block_comment_start     = LANG_GLSL_BLOCK_COMMENT_START;
-            block_comment_end       = LANG_GLSL_BLOCK_COMMENT_END;
-            block_comments_can_nest = LANG_GLSL_BLOCK_COMMENTS_CAN_NEST;
-        }
-    }
-
-    parent_index  := document.scopes.count;
-    sibling_index := -1;
-    {
-        scope := array_add(*document.scopes);
-        scope.loc0 = text_buffer_get_start(document.buffer);
-        scope.loc1 = text_buffer_get_end(document.buffer);
-        scope.indentation_level = 0;
-    }
-
-    block_comment_depth := 0;
-
-    for :text_buffer_lines line_text, line_index: document.buffer {
-        // TODO(jt): @Cleanup @Speed This loop became a little gnarly. Also probably slow. Clean it up, so we can SIMD later.
-        skip_due_to_block_comment_open_or_close := 0; // TODO(jt): @Cleanup This would normally just be a string advance, but our loop is structured unfortunately.
-
-        for byte, byte_index: line_text {
-            if skip_due_to_block_comment_open_or_close > 0 {
-                skip_due_to_block_comment_open_or_close -= 1;
-                continue;
-            }
-
-            //
-            // Comment detection
-            //
-
-            // Note that we are comparing bytes with bytes in the comment detection code, but it shouldn't matter!
-            if line_comment.count {
-                is_line_comment := block_comment_depth == 0 && String.starts_with(String.slice(line_text, byte_index, line_text.count - byte_index), line_comment);
-                if is_line_comment {
-                    continue line_index;
-                }
-            }
-
-            if block_comment_start.count {
-                is_block_comment_start := (block_comment_depth == 0 || block_comments_can_nest) && String.starts_with(String.slice(line_text, byte_index, line_text.count - byte_index), block_comment_start);
-                if is_block_comment_start {
-                    block_comment_depth += 1;
-
-                    skip_due_to_block_comment_open_or_close = block_comment_start.count - 1;
-                    continue;
-                }
-            }
-
-            if block_comment_end.count {
-                is_block_comment_end := block_comment_depth > 0 && String.starts_with(String.slice(line_text, byte_index, line_text.count - byte_index), block_comment_end);
-                if is_block_comment_end {
-                    if block_comments_can_nest {
-                        block_comment_depth -= 1;
-                        sanity_assert(block_comment_depth >= 0);
-                        block_comment_depth = max(block_comment_depth, 0);
-                    } else {
-                        block_comment_depth = 0;
-                    }
-
-                    skip_due_to_block_comment_open_or_close = block_comment_end.count - 1;
-                    continue;
-                }
-            }
-
-            if block_comment_depth > 0 {
-                continue;
-            }
-
-            //
-            // Parentheses detection
-            //
-
-            for paren_pair: indentation_pairs {
-                if byte == paren_pair.open {
-                    index := document.scopes.count;
-                    parent := *document.scopes[parent_index];
-
-                    scope: Scope;
-                    scope.loc0.x = count_utf8_chars(String.slice(line_text, 0, byte_index));
-                    scope.loc0.y = line_index;
-
-                    // loc1 is properly set when we find the closing paren, but until then we set it
-                    // to the end of the document, so that it forms a non-empty interval that can be
-                    // found when someone searches the tree.
-                    scope.loc1 = text_buffer_get_end(document.buffer);
-
-                    scope.open_paren_char = byte;
-                    // close_paren is set when we find the closing paren
-
-                    //
-                    // indentation_level is set based on kind of indentation scope this is. We
-                    // detect that here by looking for nonwhitespace character before and after the
-                    // opening paren.
-                    //
-
-                    scope.indentation_level = scope.loc0.x + INDENTATION_STEP;
-
-                    for 0..byte_index - 1 {
-                        // TODO(jt): @Speed We could SIMD this.
-                        if !String.is_any(line_text[it], String.DEFAULT_SPACES) {
-                            scope.indentation_flags |= .PREFIXED;
-                            scope.indentation_level = it + INDENTATION_STEP; // DEFAULT_SPACES are all single-byte.
-                            break;
-                        }
-                    }
-
-                    for byte_index + 1..line_text.count - 1 {
-                        // TODO(jt): @Speed We could SIMD this.
-                        if !String.is_any(line_text[it], String.DEFAULT_SPACES) {
-                            // HANGING scopes are indented Casey-style (or is it Microsoft-style?)
-                            scope.indentation_flags |= .HANGING;
-                            scope.indentation_level = scope.loc0.x + it - byte_index; // DEFAULT_SPACES are all single-byte.
-                            break;
-                        }
-                    }
-
-                    scope.parent_index = parent_index;
-                    if sibling_index == -1 {
-                        assert(parent.first_child_index == -1);
-                        parent.first_child_index = index;
-                    } else {
-                        sibling := *document.scopes[sibling_index];
-                        sibling.next_sibling_index = index;
-                    }
-
-                    array_add(*document.scopes, scope); // We potentially invalidate pointers here, careful!
-
-                    parent_index = index;
-                    sibling_index = -1;
-
-                    continue byte;
-                } else if byte == paren_pair.close {
-                    scope_index := parent_index;
-                    scope := *document.scopes[scope_index];
-                    if paren_pair.open == scope.open_paren_char {
-                        // TODO(jt): @Speed Maintain count so we don't have to rescan the line?
-                        scope.loc1.x = count_utf8_chars(String.slice(cast(string, line_text), 0, byte_index));
-                        scope.loc1.y = line_index;
-
-                        scope.close_paren_char = byte;
-
-                        parent_index  = scope.parent_index;
-                        sibling_index = scope_index;
-                    }
-
-                    // Ignoring mismatching closing parens is an alright behavior, but maybe there
-                    // is something better we can do?
-
-                    continue byte;
-                }
-            }
+            _update_scopes(document, LANG_GLSL_INDENTATION_PAREN_PAIRS,
+                           LANG_GLSL_LINE_COMMENT,
+                           LANG_GLSL_BLOCK_COMMENT_START, LANG_GLSL_BLOCK_COMMENT_END, LANG_GLSL_BLOCK_COMMENTS_CAN_NEST,
+                           LANG_GLSL_SINGLE_LINE_STRING, LANG_GLSL_MULTI_LINE_STRING);
         }
     }
 }
 
-find_scope_for_location :: (document: Document, loc: Text_Location, start_x_inclusive := true, end_x_inclusive := true, start_y_inclusive := true, end_y_inclusive := true) -> *Scope {
+find_scope_for_location :: (document: Document, loc: Text_Location, x0_inclusive := true, x1_inclusive := true, y0_inclusive := true, y1_inclusive := true) -> *Scope {
     ProfileZone("find_scope_for_location");
 
     scopes := document.scopes;
@@ -247,7 +89,7 @@ find_scope_for_location :: (document: Document, loc: Text_Location, start_x_incl
 
         while sibling_index != -1 {
             sibling := *scopes[sibling_index];
-            if contains(sibling, loc, start_x_inclusive, end_x_inclusive, start_y_inclusive, end_y_inclusive) {
+            if contains(sibling, loc, x0_inclusive, x1_inclusive, y0_inclusive, y1_inclusive) {
                 // We found a sibling that contains our location. Set it as the current scope, so that we nest to it.
                 scope = sibling;
                 break;
@@ -267,9 +109,9 @@ find_scope_for_location :: (document: Document, loc: Text_Location, start_x_incl
 
 find_indentation_level_for_location :: (document: Document, loc: Text_Location) -> s64 {
     // The Y range check is start-exclusive and end-inclusive by design: we indent the line of
-    // the closing paren depending on whether the scope has REGULAR or HANGING indentation,
+    // the closing paren depending on whether the scope has regular or HANGING indentation,
     // while the opening paren always belongs to its parent scope, so we exclude it.
-    scope := find_scope_for_location(document, loc, start_y_inclusive = false);
+    scope := find_scope_for_location(document, loc, y0_inclusive = false);
     if !scope {
         return 0;
     }
@@ -293,19 +135,18 @@ find_indentation_level_for_location :: (document: Document, loc: Text_Location) 
 
 #scope_file
 
-// TODO(jt): @Cleanup This could be unified with Font_Text_Range in font.jai.
-contains :: (scope: Scope, loc: Text_Location, start_x_inclusive: bool, end_x_inclusive: bool, start_y_inclusive: bool, end_y_inclusive: bool) -> bool {
-    test_top    := start_y_inclusive && loc.y >= scope.loc0.y || loc.y > scope.loc0.y;
-    test_bottom := end_y_inclusive   && loc.y <= scope.loc1.y || loc.y < scope.loc1.y;
-    test_left   := start_x_inclusive && loc.x >= scope.loc0.x || loc.x > scope.loc0.x;
-    test_right  := end_x_inclusive   && loc.x <= scope.loc1.x || loc.x < scope.loc1.x;
+contains :: (scope: Scope, loc: Text_Location, x0_inclusive: bool, x1_inclusive: bool, y0_inclusive: bool, y1_inclusive: bool) -> bool {
+    test_top    := ifx y0_inclusive then loc.y >= scope.loc0.y else loc.y > scope.loc0.y;
+    test_bottom := ifx y1_inclusive then loc.y <= scope.loc1.y else loc.y < scope.loc1.y;
+    test_left   := ifx x0_inclusive then loc.x >= scope.loc0.x else loc.x > scope.loc0.x;
+    test_right  := ifx x1_inclusive then loc.x <= scope.loc1.x else loc.x < scope.loc1.x;
 
     if test_top && test_bottom {
-        if scope.loc0.y == scope.loc1.y { // Can only happen if it is y-inclusive.
+        if scope.loc0.y == scope.loc1.y {
             return test_left && test_right;
-        } else if scope.loc0.y == loc.y { // Can only happen if it is y-inclusive.
+        } else if scope.loc0.y == loc.y {
             return test_left;
-        } else if scope.loc1.y == loc.y { // Can only happen if it is y-inclusive.
+        } else if scope.loc1.y == loc.y {
             return test_right;
         } else {
             return true;
@@ -313,4 +154,201 @@ contains :: (scope: Scope, loc: Text_Location, start_x_inclusive: bool, end_x_in
     }
 
     return false;
+}
+
+// This autobake monstrosity is my piggy attempt to make scope parsing faster.
+// It is exactly the same code as before, but bakes everything it can.
+//
+// In the best case, this allows you to skip entire blocks of code. In the worst case, it still moves
+// some branches to compile-time, putting less stress on the the optimizer, branch predictor, etc.
+//
+// The downside is that this code will make a polymorph instantiation for every language.
+// The speed gains are real, however. Just moving the conditions to compile time cause 2.5x speed boost.
+//   -jt, 21 September 2026
+_update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
+                   $line_comment: string,
+                   $block_comment_start: string, $block_comment_end: string, $block_comments_can_nest: bool,
+                   $single_line_string: string, $multi_line_string: string)
+{
+    parent_index  := 0;
+    sibling_index := -1;
+    {
+        scope := array_add(*document.scopes);
+        scope.loc0 = text_buffer_get_start(document.buffer);
+        scope.loc1 = text_buffer_get_end(document.buffer);
+        scope.indentation_level = 0;
+    }
+
+    inside_block_comment      := 0;
+    inside_single_line_string := false;
+    inside_multi_line_string  := false;
+
+    for :text_buffer_lines line_text, line_index: document.buffer {
+        for byte_index: 0..line_text.count - 1 {
+            if !inside_single_line_string && !inside_multi_line_string {
+                #if line_comment.count {
+                    if inside_block_comment == 0 {
+                        if String.begins_with(slice(line_text, byte_index), line_comment) {
+                            break; // Skip this line entirely.
+                        }
+                    }
+                }
+                
+                #if block_comment_start.count && block_comment_end.count {
+                    #if block_comments_can_nest {
+                        if String.begins_with(slice(line_text, byte_index), block_comment_start) {
+                            inside_block_comment += 1;
+                            
+                            byte_index += block_comment_start.count - 1; // Advance over the block comment start.
+                            continue;
+                        }
+                    } else {
+                        if inside_block_comment == 0 {
+                            if String.begins_with(slice(line_text, byte_index), block_comment_start) {
+                                inside_block_comment += 1;
+                                
+                                byte_index += block_comment_start.count - 1; // Advance over the block comment start.
+                                continue;
+                            }
+                        }
+                    }
+                    
+                    if String.begins_with(slice(line_text, byte_index), block_comment_end) {
+                        #if block_comments_can_nest {
+                            inside_block_comment -= 1;
+                            inside_block_comment = max(inside_block_comment, 0);
+                        } else {
+                            inside_block_comment = 0;
+                        }
+                        
+                        byte_index += block_comment_end.count - 1; // Advance over the block comment end.
+                        continue;
+                    }
+                }
+            }
+            
+            if inside_block_comment > 0 {
+                continue;
+            }
+            
+            #if single_line_string.count {
+                if !inside_multi_line_string {
+                    if String.begins_with(slice(line_text, byte_index), single_line_string) {
+                        if inside_single_line_string {
+                            prev_is_backslash     := byte_index >= 1 && line_text[byte_index - 1] == "\\";
+                            prevprev_is_backslash := byte_index >= 2 && line_text[byte_index - 2] == "\\";
+                            
+                            if !prev_is_backslash || prev_is_backslash && prevprev_is_backslash {
+                                inside_single_line_string = false;
+                            }
+                        } else {
+                            inside_single_line_string = true;
+                        }
+                    }
+                }
+            }
+            
+            #if multi_line_string.count {
+                if !inside_single_line_string {
+                    if String.begins_with(slice(line_text, byte_index), multi_line_string) {
+                        if inside_multi_line_string {
+                            prev_is_backslash     := byte_index >= 1 && line_text[byte_index - 1] == "\\";
+                            prevprev_is_backslash := byte_index >= 2 && line_text[byte_index - 2] == "\\";
+                            
+                            if !prev_is_backslash || prev_is_backslash && prevprev_is_backslash {
+                                inside_single_line_string = false;
+                            }
+                        } else {
+                            inside_multi_line_string = true;
+                        }
+                    }
+                }
+            }
+            
+            if inside_single_line_string || inside_multi_line_string {
+                continue;
+            }
+            
+            byte := line_text[byte_index];
+            for paren_pair: indentation_pairs {
+                if byte == paren_pair.open {
+                    index := document.scopes.count;
+                    parent := *document.scopes[parent_index];
+                    
+                    scope: Scope;
+                    scope.loc0.x = count_utf8_chars(String.slice(line_text, 0, byte_index));
+                    scope.loc0.y = line_index;
+                    
+                    // loc1 is properly set when we find the closing paren, but until then we set it
+                    // to the end of the document, so that it forms a non-empty interval that can be
+                    // found when someone searches the tree.
+                    scope.loc1 = text_buffer_get_end(document.buffer);
+                    
+                    scope.open_paren_char = byte;
+                    // close_paren is set when we find the closing paren
+                    
+                    //
+                    // indentation_level is set based on kind of indentation scope this is. We
+                    // detect that here by looking for nonwhitespace character before and after the
+                    // opening paren.
+                    //
+                    
+                    scope.indentation_level = scope.loc0.x + INDENTATION_STEP;
+                    
+                    for 0..byte_index - 1 {
+                        // TODO(jt): @Speed We could SIMD this.
+                        if !String.is_any(line_text[it], String.DEFAULT_SPACES) {
+                            scope.indentation_flags |= .PREFIXED;
+                            scope.indentation_level = it + INDENTATION_STEP; // DEFAULT_SPACES are all single-byte.
+                            break;
+                        }
+                    }
+                    
+                    for byte_index + 1..line_text.count - 1 {
+                        // TODO(jt): @Speed We could SIMD this.
+                        if !String.is_any(line_text[it], String.DEFAULT_SPACES) {
+                            // HANGING scopes are indented Casey-style (or is it Microsoft-style?)
+                            scope.indentation_flags |= .HANGING;
+                            scope.indentation_level = scope.loc0.x + it - byte_index; // DEFAULT_SPACES are all single-byte.
+                            break;
+                        }
+                    }
+                    
+                    scope.parent_index = parent_index;
+                    if sibling_index == -1 {
+                        assert(parent.first_child_index == -1);
+                        parent.first_child_index = index;
+                    } else {
+                        sibling := *document.scopes[sibling_index];
+                        sibling.next_sibling_index = index;
+                    }
+                    
+                    array_add(*document.scopes, scope); // We potentially invalidate pointers here, careful!
+                    
+                    parent_index = index;
+                    sibling_index = -1;
+                    
+                    break;
+                } else if byte == paren_pair.close {
+                    scope_index := parent_index;
+                    scope := *document.scopes[scope_index];
+                    if paren_pair.open == scope.open_paren_char {
+                        // TODO(jt): @Speed Maintain count so we don't have to rescan the line?
+                        scope.loc1.x = count_utf8_chars(String.slice(line_text, 0, byte_index));
+                        scope.loc1.y = line_index;
+                        
+                        scope.close_paren_char = byte;
+                        
+                        parent_index  = scope.parent_index;
+                        sibling_index = scope_index;
+                    }
+                    
+                    // Ignoring mismatching closing parens is an alright behavior, but maybe there
+                    // is something better we can do?
+                    
+                    break;
+                }
+            }
+        }
+    }
 }

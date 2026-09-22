@@ -416,6 +416,7 @@ sokoban_theme :: () -> Theme {
     t.keyword_color        = keyword_color;
     t.attribute_color      = unpack_srgba(0xdac6abff);
     t.directive_color      = unpack_srgba(0xc4c9bfff);
+    t.directive_variant    = .BOLD;
     t.string_literal_color = unpack_srgba(0x9bbfb6ff);
     t.number_literal_color = unpack_srgba(0x92e5cfff);
     t.comment_color        = unpack_srgba(0x869b85ff);
@@ -423,6 +424,7 @@ sokoban_theme :: () -> Theme {
     t.struct_declaration_color   = unpack_srgba(0xd9e4c9ff);
     t.enum_declaration_color     = unpack_srgba(0xb1b8beff);
     t.proc_declaration_color     = unpack_srgba(0xb9b2acff);
+    t.proc_declaration_variant   = .BOLD;
     t.constant_declaration_color = unpack_srgba(0xebe1d3ff);
 
     t.mini_panel_line_color      = cursor_minus_2;

@@ -1,16 +1,17 @@
 /*
 
-TODO(jt): Known bugs:
+TODO(jt): Known critical bugs:
 
-- Windows: file watching sometimes loops infinitely? we modify a file and keep getting events about it.
-- Clicking on an item in a listing scrolls/selects the resulting document immediately after clicking.
-- Project detection uses substring. This is incorrect. Should use sub-parts.
+- Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
+
+TODO(jt): Known serious bugs:
+
+- move_forward_word cycles on last line, if there are at least two words and a space after
+- Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
+- search_and_replace doesn't replace if second (either?) string is empty.
+- toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
 
 TODO(jt): Roadmap:
-
-- [ ] Flash pasted text
-- [ ] Flash text inserted by undo/redo
-- [ ] M-u, M-l (upcase/downcase word and move cursor)
 
 - [X] Display text on screen
 - [X] Nice font rendering
@@ -66,7 +67,7 @@ TODO(jt): Roadmap:
 - [X] Language: C
 - [~] Language: C++ ; Currently serviced by the C lexer
 - [X] Language: GLSL
-- [X] Reading and rendering CRLF
+- [X] Reading and (not) rendering CRLF
 - [X] Disambiguate path prefixes in SWITCH_VIEW, CLOSE_VIEW, and modeline
 - [X] Minimal config files (keybinds, theme, language file association)
 - [X] Prettier modeline layout
@@ -75,10 +76,11 @@ TODO(jt): Roadmap:
 
 - [X] C-: or double-click (expand region)
 - [X] Triple click to select line. (expand to line)
+- [X] Speed improvements to scope parsing
+- [X] Speed improvements to lexing for syntax highlighting
 - [ ] C-u C-<space> (cursor undo)
-- [ ] Speed improvements to scope parsing
-- [ ] Speed improvements to lexing for syntax highlighting
 - [ ] M-q (reflow)
+- [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] q to hide compilation or listing
 - [ ] Mouse interaction in the mini panel (text selection, item clicking, item hover?)
 - [ ] Mouse interaction in the modal interaction (text selection)
@@ -112,7 +114,9 @@ TODO(jt): Roadmap:
 - [ ] Render subtle symbols for whitespace characters (space, tab, cr, lf)
 - [ ] Support for dropping files into the window
 - [ ] Pretty things: blinking cursor, cursor trail, ...
-- [ ] Writing CRLF
+- [ ] Flash pasted text
+- [ ] Flash text inserted by undo/redo
+- [ ] Writing CRLF and CRLF navigation (cursor movement should skip over)
 
 ... after beta ...
 
@@ -132,6 +136,7 @@ f32 :: float32;
 f64 :: float64;
 
 #import "Basic";
+#import "Bit_Operations";
 #import "Arena"(ENABLE_DEBUG = true, ENABLE_SANITY_ASSERTS = SANITY, DEFAULT_OVERWRITE_MEMORY = SANITY);
 // TODO(jt): @Speed We could do a better job at the bucket array without complicating it too much by bitpacking
 // the occupancy mask and having a freelist for insertion.
@@ -218,6 +223,10 @@ operator==     :: Math.operator==;
 #load "modal_interaction_benchgen.jai";
 #load "config.jai";
 
+// TODO(jt): @Cleanup The only user of this is currently our modified Jai_Lexer.
+// We should remove it after we make our own lexer for Jai.
+LOGGER_USER_FLAG_NO_FILE: u32 : 0x01;
+
 TEXTURE_ID_NONE:                 Texture_ID : 0; // Not really used, just a 0 default.
 TEXTURE_ID_GLYPH_ATLAS:          Texture_ID : 1;
 TEXTURE_ID_GLYPH_ATLAS_SUBPIXEL: Texture_ID : 2;
@@ -274,12 +283,11 @@ Editor :: struct {
     panel_key_map:       Key_Map(Panel_Action);
     document_key_map:    Key_Map(Document_Action);
     compilation_key_map: Key_Map(Compilation_Action);
-    listing_key_map:     Key_Map(Listing_Action);
-    
+    listing_key_map:     Key_Map(Listing_Action);    
     theme: Theme;
     
     config: Global_Config;
-
+    
     watched_files: [..] string;
 
     //
@@ -307,7 +315,13 @@ Editor :: struct {
     mini_panel:   Mini_Panel;
     
     embark_panel: Mini_Panel;
-    embark_mode: Embark_Mode;
+    embark_act_proc: (*Editor, Input_Event, Platform); // XXX
+    
+    // Embark_Mode :: enum u8 {
+    //     ACT_ON_WORD_AT_POINT;
+    //     ACT_ON_MINI_PANEL;
+    //     ACT_ON_MINI_PANEL_ITEM;
+    // } embark_mode: Embark_Mode;
     
     modal_interaction: Modal_Interaction;
 
@@ -327,12 +341,6 @@ Editor :: struct {
     debug_frame_timeline: *Frame_Timeline;
     debug_frame_timeline_index: s64;
 
-    Embark_Mode :: enum u8 {
-        ACT_ON_WORD_AT_POINT;
-        ACT_ON_MINI_PANEL;
-        ACT_ON_MINI_PANEL_ITEM;
-    }
-    
     Debug_View :: enum u8 {
         NONE;
         ATLAS_TEXTURE;
@@ -581,6 +589,7 @@ Listing :: struct {
 
     Kind :: enum u32 {
         DIRECTORY;
+        MINI_PANEL_EXPORT;
         // TODO(jt): Add VIEWS (unified) ... this is basically entitities.
         // TODO(jt): Add SEARCH_RESULTS?
         // TODO(jt): Add COMPILATION_ERRORS?
@@ -1497,7 +1506,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
             }
 
             case .FRAME_PROFILE; {
-                message := "Debug view: Frame profile";
+                message := "Debug view: Frame profile (left=pause+left, right=pause+right, up=unpause)";
                 scissor := Rect.{ 0, 0, window_w, window_h };
                 _font_layout_and_draw_text(*editor.font, message,
                                            *render_commands, *atlas_update_regions,
@@ -1537,7 +1546,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
 
                     PADDING_X :: 20.0;
                     REGULAR_BAR_HEIGHT   :: 150.0;
-                    EXCEEDING_BAR_HEIGHT :: 350.0;
+                    EXCEEDING_BAR_HEIGHT :: 320.0;
                     R_COUNT :: 1.0 / editor.DEBUG_FRAME_PROFILE_COUNT;
 
                     graph_width := max(window_w - 2 * PADDING_X, 0);
@@ -1573,6 +1582,14 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                         profile    := *editor.debug_frame_profiles.entries[displayed_frame_index];
                         time_scale := profile.time_scale;
                         cursor_y := 0;
+
+                        _font_layout_and_draw_text(*editor.font, "zone  label                                                              hits        T(inclusive)        T(exclusive)",
+                                                   *render_commands, *atlas_update_regions,
+                                                   { 0, bar_y + EXCEEDING_BAR_HEIGHT }, scissor,
+                                                   { 1, 1, 1, 1 }, .REGULAR,
+                                                   .[], .[],
+                                                   binary = false);
+
                         for zone, zone_index: profile.zones {
                             s := tprint("% %      %     %     %",
                                         temp_right_pad(tprint("[%]", zone_index), 5),
@@ -1581,13 +1598,15 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                                         formatFloat(1000 * time_scale * zone.elapsed_inclusive, width = 15, trailing_width = 3),
                                         formatFloat(1000 * time_scale * zone.elapsed_exclusive, width = 15, trailing_width = 3));
 
-                            y := bar_y + EXCEEDING_BAR_HEIGHT + zone_index * cell_h;
+                            y := bar_y + EXCEEDING_BAR_HEIGHT + (1 + zone_index) * cell_h;
                             _font_layout_and_draw_text(*editor.font, s,
                                                        *render_commands, *atlas_update_regions,
                                                        { 0, y }, scissor,
                                                        { 1, 1, 1, 1 }, .REGULAR,
                                                        .[], .[],
                                                        binary = false);
+
+                            draw_rect(*render_commands, 0, y, window_w, y + 1, { 0.2, 0.2, 0.2, 1 });
                         }
                     }
                 } else {
@@ -1601,7 +1620,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
             }
 
             case .FRAME_TIMELINE; {
-                message := tprint("Debug view: Frame timeline (blue=update; red=render+VSync; white=refresh(%), informative only)", input.monitor_refresh_rate);
+                message := tprint("Debug view: Frame timeline (blue=update, red=render+VSync, white=refresh(%))", input.monitor_refresh_rate);
                 scissor := Rect.{ 0, 0, window_w, window_h };
                 _font_layout_and_draw_text(*editor.font, message,
                                            *render_commands, *atlas_update_regions,
@@ -1656,6 +1675,9 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
     mark_frame_timeline_point(editor, platform, input, .RENDER);
 
     if wants_this_frame {
+        
+        renderer.begin_frame(editor.theme.background_color);
+        
         if atlas_update_regions.count {
             atlas_update_region := irect_union_or_zero(atlas_update_regions);
             if editor.font.subpixel {
@@ -1663,13 +1685,12 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                 atlas.count = editor.font.glyph_atlas_subpixel.count * 4;
                 atlas.data  = cast(*u8, editor.font.glyph_atlas_subpixel.data);
 
-                renderer.update_texture_rgba8unorm(TEXTURE_ID_GLYPH_ATLAS, atlas, atlas_update_region);
+                renderer.update_texture_rgba8unorm(TEXTURE_ID_GLYPH_ATLAS_SUBPIXEL, atlas, atlas_update_region);
             } else {
                 renderer.update_texture_r8unorm(TEXTURE_ID_GLYPH_ATLAS, editor.font.glyph_atlas, atlas_update_region);
             }
         }
 
-        renderer.begin_frame(editor.theme.background_color);
         renderer.draw(render_commands);
         renderer.submit_frame();
     }
@@ -1970,6 +1991,7 @@ get_listing_name :: (editor: Editor, listing: Listing) -> string {
 
             return name;
         }
+        case .MINI_PANEL_EXPORT; return ""; // TODO(payl)
     }
 }
 
@@ -2077,6 +2099,7 @@ sync_document_with_filesystem :: (editor: *Editor, platform: Platform, input: In
 
                         cursor_before_reload := document.cursors_cold.c0;
 
+                        // TODO(jt): @Speed This delete takes an enormous amount of time for large files.
                         text_buffer_delete_all(*document.buffer, *document.cursors_cold);
                         text_buffer_insert(*document.buffer, *document.cursors_cold, contents, .FUSE);
                         text_buffer_move_to(document.buffer, *document.cursors_cold, cursor_before_reload, false);
@@ -2102,10 +2125,37 @@ sync_document_with_filesystem :: (editor: *Editor, platform: Platform, input: In
     }
 }
 
+embark_export :: (editor: *Editor, platform: Platform) {
+    
+    listing, listing_added := find_or_add_listing(editor, platform, .MINI_PANEL_EXPORT, "");
+
+    array_reset(*listing.items);
+    table_reset(*listing.marked_items);
+    arena_pop_to_mark(listing.arena, listing.arena_base_data_mark);
+    
+    for editor.mini_panel.items {
+        array_add(*listing.items, {it.text});
+    }
+    
+    if editor.active_view == .FULL {
+        right_panel := array_add(*editor.panels);
+        panel_init_with_listing(right_panel, editor, platform, listing);
+    } else {
+        panel := get_panel_for_inactive_view(editor);
+        panel_set_listing(panel, editor, listing);
+    }
+}
+
 #scope_file
 
 route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Platform, input: Input) {
     mp := *editor.mini_panel;
+    
+    if editor.embark_panel.open && editor.embark_act_proc {
+        editor.embark_act_proc(editor, event, platform);
+        editor.embark_panel.open = false;
+        return;
+    }
 
     min_item_index := ifx mp.procs.can_select_text_line(editor, platform, input) then -1 else 0;
 
@@ -2192,9 +2242,7 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
         }
 
         case .CONFIRM; {
-
-            append_to_mini_panel_history(editor, platform, mp);
-        
+            if mp.item_index != -1 append_to_mini_panel_history(editor, platform, mp);
             buffer_changed |= mp.procs.confirm(editor, platform, input);
         }
 
@@ -2355,7 +2403,7 @@ Panel_Action :: enum {
 
     // Things below could be in Global_Action, if we ever create it.
 
-    EMBARK_ACT;
+    // EMBARK_ACT;
     
     FONT_SIZE_INCREASE;
     FONT_SIZE_DECREASE;
@@ -2454,6 +2502,8 @@ Document_Action :: enum {
     
     DEBUG_PRINT_BYTE_AT_CURSOR;
     DEBUG_INSERT_BENCHMARK_TEXT;
+    DEBUG_BENCHMARK_SCOPE_PARSER;
+    DEBUG_BENCHMARK_C_LEXER;
 }
 
 Document_Macro :: struct {
@@ -2565,7 +2615,7 @@ Mini_Panel_Action :: enum {
     EMBARK_ACT;
     
     CONFIRM;
-    CANCEL_OR_STOP_SELECTING;    
+    CANCEL_OR_STOP_SELECTING;
 }
 
 Modal_Interaction_Action :: enum {
@@ -2631,11 +2681,9 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
             }
 
             if document.kind == .COMPILATION {
-                
                 buffered, action   := key_map_input(*editor.compilation_key_map, event);
                 did_buffer_event   |= buffered;
                 did_execute_action |= execute_compilation_action(editor, platform, input, panel, view, document, action);
-                
             } else {
                 
                 buffered, action, shortcut := key_map_input(*editor.document_key_map, event);
@@ -2787,7 +2835,7 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
 
 execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, panel: *Panel, action: Panel_Action) -> executed: bool {
     theme_changed := false;
-    
+
     if #complete action == {
         case .NONE;  return false;
 
@@ -2942,9 +2990,9 @@ execute_panel_action :: (editor: *Editor, platform: Platform, input: Input, pane
         case .COMPILE_IN_PROJECT_OR_DIRECTORY;  open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.PROJECT_OR_DIRECTORY));
         case .COMPILE_IN_DIRECTORY;             open_modal_interaction(editor, platform, input, modal_interaction_compile_procs, cast(*void, Modal_Interaction_Compile_Mode.DIRECTORY));
 
-        case .EMBARK_ACT; {
-            editor.embark_panel.open ^= true;
-        }
+        // case .EMBARK_ACT; {
+        //     editor.embark_panel.open ^= true;
+        // }
         
         case .FONT_SIZE_INCREASE;               editor.font_size += 1;
         case .FONT_SIZE_DECREASE;               editor.font_size = max(editor.font_size - 1, 1);
@@ -3237,7 +3285,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         }
 
         case .GO_TO_LINE;       open_modal_interaction(editor, platform, input, modal_interaction_go_to_line_procs);
-        
+
         case .START_SELECTING;  view.selecting = true;  text_cursors_join(*view.cursors);
         case .STOP_SELECTING;   view.selecting = false; text_cursors_join(*view.cursors);
 
@@ -3438,7 +3486,6 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
-        // TODO(jt): @Bug This doesn't align the comment well across multiple lines.
         case .TOGGLE_COMMENT; {
             line_comment, block_comment_start, block_comment_end := document_get_comment_style(document);
             line_comment_length := count_utf8_chars(line_comment);
@@ -3466,10 +3513,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                         line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
                         line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
 
-                        if String.starts_with(line_view, line_comment_with_space) {
+                        if String.begins_with(line_view, line_comment_with_space) {
                             comments_action = .REMOVE;
                             text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
-                        } else if String.starts_with(line_view, line_comment) {
+                        } else if String.begins_with(line_view, line_comment) {
                             comments_action = .REMOVE;
                             text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
                         } else  {
@@ -3504,10 +3551,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                             line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
                             line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
 
-                            if String.starts_with(line_view, line_comment_with_space) {
+                            if String.begins_with(line_view, line_comment_with_space) {
                                 text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
                                 comments_action = .REMOVE;
-                            } else if String.starts_with(line_view, line_comment) {
+                            } else if String.begins_with(line_view, line_comment) {
                                 text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
                                 comments_action = .REMOVE;
                             }
@@ -3612,22 +3659,6 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         case .LANGUAGE_C;     document_change_lang(document, .C);
         case .LANGUAGE_JAI;   document_change_lang(document, .JAI);
         case .LANGUAGE_GLSL;  document_change_lang(document, .GLSL);
-
-        case .DEBUG_PRINT_BYTE_AT_CURSOR; {
-            if text_buffer_can_read_at_location(document.buffer, view.cursors.c0) {
-                byte := text_buffer_get_byte_at_location(document.buffer, view.cursors.c0);
-                editor_log(editor, "Byte at cursor: %", byte);
-            } else {
-                editor_log(editor, "Can't read at cursor");
-            }
-        }
-
-        case .DEBUG_INSERT_BENCHMARK_TEXT; {
-            document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
-            if !(document.flags & .READONLY) {
-                open_modal_interaction(editor, platform, input, modal_interaction_benchgen_procs);
-            }
-        }
         
         case .IMENU; open_mini_panel(editor, platform, input, mini_panel_imenu_procs);
 
@@ -3666,6 +3697,35 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 // for staged_macro.text_input { char = it; remove; }
                 // buffer_changed |= text_buffer_insert_char(*document.buffer, *view.cursors, char, .NONE);
             }
+        }
+        
+        case .DEBUG_PRINT_BYTE_AT_CURSOR; {
+            if text_buffer_can_read_at_location(document.buffer, view.cursors.c0) {
+                byte := text_buffer_get_byte_at_location(document.buffer, view.cursors.c0);
+                editor_log(editor, "Byte at cursor: %", byte);
+            } else {
+                editor_log(editor, "Can't read at cursor");
+            }
+        }
+
+        case .DEBUG_INSERT_BENCHMARK_TEXT; {
+            document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
+            if !(document.flags & .READONLY) {
+                open_modal_interaction(editor, platform, input, modal_interaction_benchgen_procs);
+            }
+        }
+
+        case .DEBUG_BENCHMARK_SCOPE_PARSER; {
+            run_debug_benchmark(editor, platform, #code {
+                update_scopes(document);
+            });
+        }
+
+        case .DEBUG_BENCHMARK_C_LEXER; {
+            document_change_lang(document, .C);
+            run_debug_benchmark(editor, platform, #code {
+                lang_c_update_tokens(document);
+            });
         }
     }
 
@@ -3814,8 +3874,8 @@ execute_compilation_action :: (editor: *Editor, platform: Platform, input: Input
             cursor_moved = true;
         }
 
-        case .START_SELECTING;  view.selecting = true;  text_cursors_join(*view.cursors);
-        case .STOP_SELECTING;   view.selecting = false; text_cursors_join(*view.cursors);
+        case .START_SELECTING;              view.selecting = true;  text_cursors_join(*view.cursors);
+        case .STOP_SELECTING;               view.selecting = false; text_cursors_join(*view.cursors);
 
         case .COPY; {
             view.selecting = false;
@@ -4103,7 +4163,7 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
     }
 
     //
-    // Mouse selection/drag update and double/triple click.
+    // Mouse selection/drag update and single/double/triple click.
     //
     // Unlike wheel scrolling, mouse selection is sticky to the panel where it started.
     //
@@ -4185,11 +4245,10 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                 }
 
                 //
-                // Mouse selection in DOCUMENT views.
-                //
-                // (If we are not multiclicking.)
+                // Mouse selection in DOCUMENT views (if we are not multiclicking).
                 //
 
+                // Note that we don't need a click on this frame. We can click elsewhere, and reposition the cursors afterwards.
                 if editor.input_state.mb_left_multiclicks < 2 {
                     row := cast(s64, floor((mouse.y + panel.scroll.value.y) / cell_h));
                     col := 0;
@@ -4219,6 +4278,7 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
 
                 if editor.input_state.keys[Key.MB_LEFT] & .PRESSED && editor.input_state.mb_left_multiclicks >= 2 {
                     if editor.input_state.mb_left_multiclicks == 2 {
+                        // TODO(jt): @Bug Keep This selection on the same line.
                         text_buffer_expand_selection(document.buffer, *view.cursors);
                     } else if editor.input_state.mb_left_multiclicks >= 3 {
                         start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y);
@@ -4228,6 +4288,10 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                     }
                 }
 
+                // Only request the clamp if we got a press, because the interpolation it will interfere with our mouse scrolling .
+                if editor.input_state.keys[Key.MB_LEFT] & .PRESSED {
+                    view.flags |= .CLAMP_SCROLL_TO_CURSOR;
+                }
                 view.flags |= .RECEIVED_MOUSE_INTERACTION;
             }
 
@@ -4794,13 +4858,14 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 //
                 {
                     for document.tokens {
-                        if it.loc1.y < viewport_line0  continue; // TODO(jt): @Speed Binary search or skip ahead for the start instead?
                         if it.loc0.y > viewport_line1  break;
+                        if it.loc1.y < viewport_line0  continue; // TODO(jt): @Speed Binary search or skip ahead for the start instead?
+                        if it.loc0 == it.loc1          continue; // Empty token.
 
                         r: Font_Style_Range;
                         r.x0 = it.loc0.x;
                         r.y0 = it.loc0.y - viewport_line0;
-                        r.x1 = it.loc1.x;
+                        r.x1 = it.loc1.x - 1; // Convert from exclusive to inclusive.
                         r.y1 = it.loc1.y - viewport_line0;
                         
                         r.color, r.variant = get_style_for_token_type(editor, it.type);
@@ -5451,6 +5516,8 @@ find_or_add_document :: (editor: *Editor, platform: Platform, kind: Document.Kin
                 case "hpp";   #through;
                 case "cpp";   #through;
                 case "h";     #through;
+                case "slang"; #through;
+                case "sl";    #through;
                 case "c";     document.lang = .C;
                 case "jai";   document.lang = .JAI;
                 case "vert";  #through;
@@ -5487,9 +5554,12 @@ find_or_add_document :: (editor: *Editor, platform: Platform, kind: Document.Kin
     return pointer, true;
 }
 
-find_or_add_listing :: (editor: *Editor, platform: Platform, kind: Listing.Kind, _backing_directory_path: string) -> *Listing, added: bool {
-    sanity_assert(!String.ends_with(_backing_directory_path, "/"));
-    backing_directory_path := String.trim_right(_backing_directory_path, "/");
+find_or_add_listing :: (editor: *Editor, platform: Platform, $kind: Listing.Kind, _backing_directory_path: string) -> *Listing, added: bool {
+    backing_directory_path: string;
+    #if kind == .DIRECTORY {
+        sanity_assert(!String.ends_with(_backing_directory_path, "/"));
+        backing_directory_path = String.trim_right(_backing_directory_path, "/");
+    }
 
     for * editor.listings {
         if it.kind != kind                                      continue;
@@ -5502,19 +5572,23 @@ find_or_add_listing :: (editor: *Editor, platform: Platform, kind: Listing.Kind,
 
     debug_label_name: string;
     if #complete kind == {
-        case .DIRECTORY;  debug_label_name = String.path_filename(backing_directory_path);
+        case .DIRECTORY;          debug_label_name = String.path_filename(backing_directory_path);
+        case .MINI_PANEL_EXPORT;  debug_label_name = tprint("%", editor.mini_panel.procs); // XXX
     }
 
     // TODO(jt): @Leak The sprint below leaks into perm.
     listing_arena := make_arena(editor, platform, .MEDIUM, sprint("% (Listing)", debug_label_name,, arena_allocator(editor.perm_arena)));
 
     listing: Listing;
-    listing.kind = .DIRECTORY;
+    listing.kind = kind;
     listing.time_of_last_activation = editor.input_state.time;
 
     listing.arena = listing_arena;
-    if backing_directory_path.count {
-        listing.backing_directory_path = arena_push_string(listing_arena, backing_directory_path);
+    
+    #if kind == .DIRECTORY {
+        if backing_directory_path.count {
+            listing.backing_directory_path = arena_push_string(listing_arena, backing_directory_path);
+        }
     }
 
     listing.arena_base_data_mark = arena_get_mark(listing_arena);
@@ -5653,8 +5727,6 @@ document_get_comment_style :: (document: Document) -> /* Static */ line: string,
     }
 }
 
-// TODO(jt): @Speed At sizes around ~10MB, even the fastest lexer we have (JAI_Lexer) takes 10 milliseconds to produce tokens.
-// We need to make all lexers faster, so that we can increase the highlighting cutoff.
 document_update_tokens :: (document: *Document) {
     if document.buffer.gb.count > HIGHLIGHT_CUTOFF_SIZE {
         array_reset_keeping_memory(*document.tokens);
@@ -5863,8 +5935,6 @@ run_compilation :: (editor: *Editor, platform: Platform, panel: *Panel) {
     text_buffer_insert(*document.buffer, *view.cursors, "Compiling with args: ", .OMIT);
     text_buffer_insert(*document.buffer, *view.cursors, args, .OMIT);
     text_buffer_insert(*document.buffer, *view.cursors, "\n\n", .OMIT );
-
-    // TODO(jt): @Bug On Windows, compilation returns CRLF output?
 
     time_before := platform.get_current_time_monotonic();
     exit_code, exit_type, output, error := platform.run_in_process(args, working_directory,, temp);
@@ -6216,7 +6286,7 @@ make_arena_debug_procs :: (editor: *Editor) -> Arena_Debug_Procs {
 }
 
 mark_frame_profile :: (editor: *Editor, input: Input) {
-    #assert is_power_of_two(editor.DEBUG_FRAME_PROFILE_COUNT); // So that we can use bit ops modulo.
+    #assert is_nonzero_power_of_two(editor.DEBUG_FRAME_PROFILE_COUNT); // So that we can use bit ops modulo.
 
     if editor.debug_view == .FRAME_PROFILE {
         state := *editor.debug_view_state._frame_profile;
@@ -6245,11 +6315,39 @@ mark_frame_timeline_point :: (editor: *Editor, platform: Platform, input: Input,
         case .END; {
             editor.debug_frame_timeline.entries[editor.debug_frame_timeline_index].time_end = platform.get_current_time_monotonic() - input.time_of_program_start;
 
-            #assert is_power_of_two(editor.DEBUG_FRAME_TIMELINE_COUNT); // So that we can use bit ops modulo.
+            #assert is_nonzero_power_of_two(editor.DEBUG_FRAME_TIMELINE_COUNT); // So that we can use bit ops modulo.
             editor.debug_frame_timeline_index += 1;
             editor.debug_frame_timeline_index &= editor.DEBUG_FRAME_TIMELINE_COUNT - 1;
         }
     }
+}
+
+run_debug_benchmark :: (editor: *Editor, platform: Platform, bench_iteration: Code) #expand {
+    min_elapsed: Apollo_Time = { 0xffff_ffff_ffff_ffff, 0x7fff_ffff_ffff_ffff };
+    max_elapsed: Apollo_Time = { 0, 0 };
+    TIME_LIMIT :: #run milliseconds_to_apollo(1000);
+
+    bench_start := platform.get_current_time_monotonic();
+    bench_runs  := 0;
+    while 1 {
+        auto_release_temp();
+        
+        start := platform.get_current_time_monotonic();
+        #insert bench_iteration;
+        end   := platform.get_current_time_monotonic();
+
+        elapsed := end - start;
+        if elapsed < min_elapsed  min_elapsed = elapsed;
+        if elapsed > max_elapsed  max_elapsed = elapsed;
+
+        bench_runs += 1;
+        if end - bench_start > TIME_LIMIT {
+            break;
+        }
+    }
+
+    editor_log(editor, "Ran % rounds: min % seconds, max % seconds",
+               bench_runs, to_float64_seconds(min_elapsed), to_float64_seconds(max_elapsed));
 }
 
 toggle_debug_view :: (editor: *Editor, value: Editor.Debug_View) {

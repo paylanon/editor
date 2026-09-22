@@ -37,7 +37,7 @@ logger :: (message: string, data: *void, info: Log_Info) {
         source_prefix = temp_right_pad(source_prefix, PAD_LENGTH);
     }
 
-    if File.is_valid(logger_data.log_file) {
+    if !(info.user_flags & Editor.LOGGER_USER_FLAG_NO_FILE) && File.is_valid(logger_data.log_file) {
         sb: String_Builder;
         sb.allocator = temp;
 

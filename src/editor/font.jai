@@ -298,7 +298,7 @@ Font_Style_Range :: struct {
     using range: Font_Range;
     color: Vector4;
     variant: Font_Variant;
-    comment := false; // TEMP
+    comment := false; // XXX
 }
 
 Font_Invert_Range :: struct {
@@ -339,8 +339,8 @@ get_style_for_token_type :: (editor: *Editor, token_type: Token_Type) -> color: 
         case .PROC_DECLARATION;      color = editor.theme.proc_declaration_color; variant = editor.theme.proc_declaration_variant;
         case .CONSTANT_DECLARATION;  color = editor.theme.constant_declaration_color; variant = editor.theme.constant_declaration_variant;
         
-        case .TYPE_IDENTIFIER;       color = editor.theme.struct_declaration_color; variant = editor.theme.struct_declaration_variant;
-        case .PROC_CALL;             color = editor.theme.proc_declaration_color; variant = editor.theme.proc_declaration_variant;
+        case .TYPE_IDENTIFIER;       color = editor.theme.struct_declaration_color; variant = editor.theme.text_variant;
+        case .PROC_CALL;             color = editor.theme.proc_declaration_color; variant = editor.theme.text_variant;
     }
     
     return color, variant;
@@ -394,6 +394,7 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
     comment_note: s64;
     comment_todo: s64;
     comment_tag:  s64;
+    comment_xxx:  s64;
 
     ITERATOR :: #ifx binary then string_bytes_iter else Unicode.utf8_iter;
     for :ITERATOR text {
@@ -444,6 +445,8 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
                 tag := String.stop_at_any(substr, String.DEFAULT_SPACES);
                 if tag.count > 1 comment_tag = tag.count;
             }
+            
+            if it == #char "X" if String.slice(text, it_index, 3) == "XXX" comment_xxx = 3;
         }
         
         if style_range {
@@ -463,21 +466,29 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
         
         
         // Recolor within-comment keywords.
-        // TODO(payl): pull from theme
+        // TODO(payl): pull from theme?
         
         if comment_todo {
             glyph_color = lerp(glyph_color, {1, 0, 0, 1}, 0.2);
+            glyph_variant = .BOLD;
             comment_todo -= 1;
         }
 
         if comment_note {
             glyph_color = lerp(whiten(glyph_color, 0.06), {1, .4, 0, 1}, 0.1);
+            glyph_variant = .BOLD;
             comment_note -= 1;
         }
 
         if comment_tag {
             glyph_color = lerp(whiten(glyph_color, 0.06), {1, .4, 0, 1}, 0.04);
             comment_tag -= 1;
+        }
+        
+        if comment_xxx {
+            glyph_color = darken(glyph_color, 0.4);
+            glyph_variant = .BOLD;
+            comment_xxx -= 1;
         }
         
         

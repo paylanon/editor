@@ -179,7 +179,12 @@ IRect   :: Editor.IRect;
 // TODO(jt): Simp/OpenGL works everywhere, but Simp is a little too big and OpenGL drivers a little too buggy.
 // Also it would be good if we could control the latency a little. Do our own backends?
 // Vulkan on Windows and Linue, and Metal on macOS? We could even try Aaltonen's NoGraphicsAPI.
-#load "renderer_simp.jai";
+#if __RENDERER == "simp"{
+   #load "renderer_simp.jai";
+} else #if __RENDERER == "ld3d" {
+   #load "renderer_ld3d.jai";
+}
+
 #load "logger.jai";
 
 SCHEDULER_PRECISION_MILLIS :: 1;
@@ -206,6 +211,11 @@ main :: () {
     logger_data: Logger_Data;
     logger_data.time_of_program_start = time_of_program_start;
 
+    // TODO(jt): We'd also like to install handlers for __array_bounds_check_fail, __cast_bounds_check_fail,
+    // __null__pointer_check_fail, __arithmetic_overflow, so that if it happens for people we can at least
+    // inspect the logs. The only way I see doing that is having our local copy of Runtime_Support, which I
+    // don't want to do yet for obvious reasons. These procedures are #no_context, so we'd have to make the log
+    // handle a global, but we can live with that.
     context.logger           = logger;
     context.logger_data      = *logger_data;
     context.assertion_failed = assertion_failed;
@@ -312,7 +322,7 @@ main :: () {
                 files.allocator = temp;
 
                 visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] string) {
-                    if String.starts_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
+                    if String.begins_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
                         array_add(userdata, visit_info.full_name);
                     }
                 }
@@ -349,7 +359,6 @@ main :: () {
     }
 
     window := Window.create_window(1920, 1200, "editor");
-
     renderer_init(window);
 
     platform: Editor.Platform;
@@ -1063,9 +1072,6 @@ platform_process_watched_directory_changes :: () {
 
             bytes_transferred: s32;
             success := GetOverlappedResult(it.info.directory_handle, *it.info.overlapped, *bytes_transferred, FALSE);
-            if success {
-                log("% bytes transferred into notify buffer for watching directory %", bytes_transferred, it.info.path);
-            }
 
             defer issue_one_read(it.info); // Note that we can miss events until the overlapped read gets set up again. It is fine.
 

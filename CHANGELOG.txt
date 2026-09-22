@@ -1,11 +1,37 @@
 (unreleased)
 ------------
 
+New features:
+
+- Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
+  triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
+- Directory lister now selects on click, and opens on double-click.
+
+Speed improvements:
+
+- Scope parsing is now faster. kb_text_shape.h parses in 7 ms (previously 17 ms)
+- Lexing for syntax highlighting is now faster. kb_text_shape.h lexes in about 9 ms (previously 15 ms)
+
+Both of these changes are just the beginning. The end goal is to lex and parse files with 100000 lines of code
+without dropping a frame. We might need to switch to incremental strategies to get there.
+
 - Stop building binary releases with the -sanity flag, making anything text related much faster.
   This makes it possible to open and edit files up to a few gigabytes, although some operations will still be slow.
   The hard limit is 8GB - the size of the per-file memory reservation, but you'll run into problems much sooner.
-- Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
-  triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
+  (Note that currently the editor crashes if the size limit is exceeded... this will improve)
+
+Fixes:
+
+- Scope parsing now respects strings. Having parentheses (and comments) within strings now won't mess with indentation.
+- Fix an arithmetic overflow crash in Jai_Lexer.
+- Fix divide by zero when displaying document position percent in the mode line.
+- Don't log each modification to a watched directory. (This spammed the logs per frame in certain cases.)
+- Clamp viewport to cursor when click into text buffer causes the cursor to go out of the viewport,
+  e.g. because we are horizontally scrolled and the clicked-on line is short.
+- Properly account for path parts when detecting project directories.
+
+Other:
+
 - Disable automatic stripping of whitespace on save, as it made it difficult to work with source code with different conventions.
   This will eventually be a project configuration option. For now, you can strip_whitespace manually.
 

@@ -4,10 +4,11 @@
 // This is a slightly modified modules/Jai_Lexer:
 //
 // We added COMMENT and BLOCK_COMMENT tokens.
-// We also removed a little bit of dead code here and there, so we compile less.
+// We also removed a little bit of dead code here and there.
 // We fixed a crash when parsing here strings.
 // We fixed another crash when we encounter end of file while parsing a string escape sequence (cast bounds check failed otherwise).
-//
+// We fixed yet another crash when an integer literal overflows. The lexer detects the overflow, but than crashes on AOC (possibly, becuase AOC was added to the language after Jai_Lexer was written, or becuase it is still not enabled by default as of beta 0.2.030).
+// We pass a NO_FILE user flag to log when we report a parse error, so that we don't spam the log file. 
 
 // @Cleanup: Explicitly check against end-of-input for all sub-lexers.
 // @Cleanup: We have all these no_checks in here because end-of-input is -1. We probably want to be cleaner about that in some way.
@@ -282,16 +283,21 @@ peek_next_character :: (lexer: *Lexer) -> s16 {
     return result;
 }
 
+// :ModifiedJaiLexerModule
+//
+// Because we are a text editor and the person is typing many characters with the buffer possibly not lexing correctly,
+// we silence the file logs. This flag is also defined in editor.jai.
+USER_FLAG_NO_FILE: u32 : 0x01;
 
 report_parse_error :: (lexer: *Lexer, format: string, arguments: .. Any) {
-    log(format, .. arguments);  // @Cleanup: Move this function, make it user-overridable.
-    log("... at line %, character %.\n", lexer.current_line_number, lexer.current_character_index);
+    log(format, .. arguments, user_flags = USER_FLAG_NO_FILE);  // @Cleanup: Move this function, make it user-overridable.
+    log("... at line %, character %.\n", lexer.current_line_number, lexer.current_character_index, user_flags = USER_FLAG_NO_FILE);
     lexer.reported_error = true;
 } @PrintLike
 
 report_parse_error :: (lexer: *Lexer, token: *Token, format: string, arguments: .. Any) {
-    log(format, .. arguments);  // @Cleanup: Move this function, make it user-overridable.
-    log("... at line %, character %.\n", token.l0, token.c0);
+    log(format, .. arguments, user_flags = USER_FLAG_NO_FILE);  // @Cleanup: Move this function, make it user-overridable.
+    log("... at line %, character %.\n", token.l0, token.c0, user_flags = USER_FLAG_NO_FILE);
     lexer.reported_error = true;
 } @PrintLike
 
@@ -1107,7 +1113,9 @@ make_number :: (lexer: *Lexer) -> *Token {
                         numeric_flags |= .OVERFLOWED;
                     }
 
-                    digit_accumulator *= base;
+                    #no_aoc {
+                        digit_accumulator *= base;
+                    }
 
                     pre_add := digit_accumulator;
 
@@ -1115,7 +1123,9 @@ make_number :: (lexer: *Lexer) -> *Token {
                         result_can_only_be_u64_if_it_is_an_integer_at_the_end = true;
                     }
 
-                    digit_accumulator += digit_value;
+                    #no_aoc {
+                        digit_accumulator += digit_value;
+                    }
                     if digit_accumulator < pre_add {
                         numeric_flags |= .OVERFLOWED;
                     }

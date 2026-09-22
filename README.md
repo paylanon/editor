@@ -41,7 +41,7 @@ The editor is written in Jai, which is not publicly available yet. Hopefully it 
 
 ## Temporary limitations
 
-This is an early alpha. Bugs and occational crashes may happen. Save often.
+This is an early alpha. Bugs and occasional crashes may happen. Save often.
 
 **Language support**
 

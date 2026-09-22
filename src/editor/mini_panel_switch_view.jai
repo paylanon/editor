@@ -28,7 +28,9 @@ can_select_text_line :: (editor: *Editor, platform: Platform, input: Input) -> b
     return false;
 }
 
-init :: (editor: *Editor, platform: Platform, input: Input) {}
+init :: (editor: *Editor, platform: Platform, input: Input) { editor.embark_act_proc = embark_act; }
+
+embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {}
 
 update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bool, selected_item_changed: bool) {
     mini_panel := *editor.mini_panel;

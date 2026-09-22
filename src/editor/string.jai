@@ -2,6 +2,8 @@
 
 // TODO(jt): There are no 5-byte or 6-byte utf8 codepoints. Find out what this table should really
 // look like and/or explain. (The table is a modified version of modules/Unicode.trailingBytesForUTF8)
+//
+// Also see UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED.
 UTF8_LENGTH_FOR_STARTING_BYTE :: u8.[
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
@@ -11,6 +13,17 @@ UTF8_LENGTH_FOR_STARTING_BYTE :: u8.[
     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
     2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
     3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,6,6,
+];
+
+UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED :: u8.[
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
 ];
 
 // TODO(jt): @Speed @Cleanup This is a deprecated routine from modules/String,
@@ -42,18 +55,18 @@ find_index_from_right :: (s: string, byte: u8, start_index := S64_MAX) -> s64  #
 }
 
 // TODO(jt): @Cleanup This is a simpler overload of slice from modules/String. We should mail this in.
+// An additional modification is the change from assert to sanity_assert+clamp, because asserts harm codegen
+// (verified in beta 0.2.030), producing additional basic blocks and machine code. Real-world performance suffers.
 slice :: inline (s: string, index: s64) -> string {
-    assert(index >= 0, "index = %", index);
+    sanity_assert(index >= 0, "index = %", index);
+    if index < 0         index = 0;       
+    
     if index >= s.count  return "";
 
     c: string = ---;
     c.data    = s.data + index;
     c.count   = s.count - index;
     return c;
-}
-
-count_leading_whitespace_chars :: (bytes: [] u8) -> s64 {
-    return inline count_leading_whitespace_chars(cast(string, bytes));
 }
 
 count_utf8_chars :: (bytes: [] u8) -> s64 {
@@ -194,11 +207,11 @@ string_bytes_iter :: (s: *string, body: Code, flags: For_Flags) #expand {
 // Path stuff
 //
 
-// Like path_filename, but extracts last N parts of the path. Returns actual number of paths.
+// Like path_filename, but extracts last N parts of the path. Returns actual number of path parts.
 path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
     count := 1;
 
-    index := find_index_from_right(path, "/");
+    index := find_index_from_right(path, #char "/");
     if index == -1 {
         return path, count;
     }
@@ -206,7 +219,7 @@ path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
     while count < n {
         count += 1;
 
-        index = find_index_from_right(path, "/", index - 1);
+        index = find_index_from_right(path, #char "/", index - 1);
         if index == -1 {
             return path, count;
         }
@@ -214,6 +227,41 @@ path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
 
     index += 1;
     return String.slice(path, index, path.count - index), count;
+}
+
+// Like begins_with, but accounts for path parts, so projects/jai is not a prefix of projects/jai-thingy,
+// but projects/jai is a prefix of projects/jai/thingy.
+path_begins_with :: (_path: string, _prefix: string) -> bool {
+    path   := _path;
+    prefix := _prefix;
+    
+    while path.count && prefix.count {
+        path_part_count   := String.find_index_from_left(path, #char "/");
+        prefix_part_count := String.find_index_from_left(prefix, #char "/");
+        path_advance   := path_part_count + 1;
+        prefix_advance := prefix_part_count + 1;
+
+        if path_part_count == -1 {
+            path_part_count = path.count;
+            path_advance    = path.count;
+        }
+        if prefix_part_count == -1 {
+            prefix_part_count = prefix.count;
+            prefix_advance    = prefix.count;
+        }
+        
+        path_part   := String.slice(path, 0, path_part_count);
+        prefix_part := String.slice(prefix, 0, prefix_part_count);
+        
+        if path_part != prefix_part {
+            return false;
+        }
+        
+        advance(*path, path_advance);
+        advance(*prefix, prefix_advance);
+    }
+    
+    return prefix.count == 0;
 }
 
 //

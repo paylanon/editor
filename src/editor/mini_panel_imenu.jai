@@ -100,7 +100,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                         token := it;
                         token.loc1.x += 1;
                         
-                        ident := text_buffer_make_view_for_interval(document.buffer, token.loc0, token.loc1);
+                        ident := text_buffer_make_view_for_interval(document.buffer, {token.loc0.x, token.loc0.y}, {token.loc1.x, token.loc1.y});
                         
                         found, found_indices := line_search(ident, search_parts, smartcase,, temp);
                         
