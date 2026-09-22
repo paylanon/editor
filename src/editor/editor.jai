@@ -2,13 +2,12 @@
 
 TODO(jt): Known critical bugs:
 
-- Infinite loop when clicking into *scratch* buffer (related to expand_selection?, maybe counting font positions?)
+- Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
 
 TODO(jt): Known serious bugs:
 
 - Project detection uses substring. This is incorrect. Should use sub-parts.
 - move_forward_word cycles on last line, if there are at least two words and a space after
-- clicking to position the cursor does not clamp scroll back to the beginning. Scroll-selecting does.
 - Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
 - search_and_replace doesn't replace if second (either?) string is empty.
 - toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
@@ -3920,7 +3919,7 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
     }
 
     //
-    // Mouse selection/drag update and double/triple click.
+    // Mouse selection/drag update and single/double/triple click.
     //
     // Unlike wheel scrolling, mouse selection is sticky to the panel where it started.
     //
@@ -4002,11 +4001,10 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                 }
 
                 //
-                // Mouse selection in DOCUMENT views.
-                //
-                // (If we are not multiclicking.)
+                // Mouse selection in DOCUMENT views (if we are not multiclicking).
                 //
 
+                // Note that we don't need a click on this frame. We can click elsewhere, and reposition the cursors afterwards.
                 if editor.input_state.mb_left_multiclicks < 2 {
                     row := cast(s64, floor((mouse.y + panel.scroll.value.y) / cell_h));
                     col := 0;
@@ -4046,6 +4044,10 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                     }
                 }
 
+                // Only request the clamp if we got a press, because the interpolation it will interfere with our mouse scrolling .
+                if editor.input_state.keys[Key.MB_LEFT] & .PRESSED {
+                    view.flags |= .CLAMP_SCROLL_TO_CURSOR;
+                }
                 view.flags |= .RECEIVED_MOUSE_INTERACTION;
             }
 
