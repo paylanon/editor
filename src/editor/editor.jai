@@ -6,8 +6,6 @@ TODO(jt): Known critical bugs:
 
 TODO(jt): Known serious bugs:
 
-- Windows: file watching sometimes loops infinitely? we modify a file and keep getting events about it.
-- Clicking on an item in a listing scrolls/selects the resulting document immediately after clicking.
 - Project detection uses substring. This is incorrect. Should use sub-parts.
 - move_forward_word cycles on last line, if there are at least two words and a space after
 - clicking to position the cursor does not clamp scroll back to the beginning. Scroll-selecting does.

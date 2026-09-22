@@ -1065,9 +1065,6 @@ platform_process_watched_directory_changes :: () {
 
             bytes_transferred: s32;
             success := GetOverlappedResult(it.info.directory_handle, *it.info.overlapped, *bytes_transferred, FALSE);
-            if success {
-                log("% bytes transferred into notify buffer for watching directory %", bytes_transferred, it.info.path);
-            }
 
             defer issue_one_read(it.info); // Note that we can miss events until the overlapped read gets set up again. It is fine.
 
