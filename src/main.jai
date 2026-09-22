@@ -206,6 +206,11 @@ main :: () {
     logger_data: Logger_Data;
     logger_data.time_of_program_start = time_of_program_start;
 
+    // TODO(jt): We'd also like to install handlers for __array_bounds_check_fail, __cast_bounds_check_fail,
+    // __null__pointer_check_fail, __arithmetic_overflow, so that if it happens for people we can at least
+    // inspect the logs. The only way I see doing that is having our local copy of Runtime_Support, which I
+    // don't want to do yet for obvious reasons. These procedures are #no_context, so we'd have to make the log
+    // handle a global, but we can live with that.
     context.logger           = logger;
     context.logger_data      = *logger_data;
     context.assertion_failed = assertion_failed;

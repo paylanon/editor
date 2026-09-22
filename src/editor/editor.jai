@@ -2,8 +2,6 @@
 
 TODO(jt): Known critical bugs:
 
-- Jai lexer crashes when we try to write one more f after 0xffff_ffff_ffff_ffff. Line 1110 'digit_accumulator *= base;' has arithmetic overflow.
-- We are not printing the stack trace on arithmetic overflow...
 - Infinite loop when clicking into *scratch* buffer (related to expand_selection?, maybe counting font positions?)
 
 TODO(jt): Known serious bugs:
@@ -13,6 +11,10 @@ TODO(jt): Known serious bugs:
 - Project detection uses substring. This is incorrect. Should use sub-parts.
 - move_forward_word cycles on last line, if there are at least two words and a space after
 - clicking to position the cursor does not clamp scroll back to the beginning. Scroll-selecting does.
+- Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
+- search_and_replace doesn't replace if second (either?) string is empty.
+- toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
+- mode line displays overflowing int literal instead of percent, when the document has just one line.
 
 TODO(jt): Roadmap:
 
@@ -79,8 +81,8 @@ TODO(jt): Roadmap:
 
 - [X] C-: or double-click (expand region)
 - [X] Triple click to select line. (expand to line)
-- [ ] Speed improvements to scope parsing
-- [ ] Speed improvements to lexing for syntax highlighting
+- [X] Speed improvements to scope parsing
+- [X] Speed improvements to lexing for syntax highlighting
 - [ ] C-u C-<space> (cursor undo)
 - [ ] M-q (reflow)
 - [ ] M-u, M-l (upcase/downcase word and move cursor)
@@ -203,6 +205,10 @@ operator==     :: Math.operator==;
 #load "modal_interaction_compile.jai";
 #load "modal_interaction_benchgen.jai";
 #load "config.jai";
+
+// TODO(jt): @Cleanup The only user of this is currently our modified Jai_Lexer.
+// We should remove it after we make our own lexer for Jai.
+LOGGER_USER_FLAG_NO_FILE: u32 : 0x01;
 
 TEXTURE_ID_NONE:                 Texture_ID : 0; // Not really used, just a 0 default.
 TEXTURE_ID_GLYPH_ATLAS:          Texture_ID : 1;
@@ -3295,7 +3301,6 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
-        // TODO(jt): @Bug Do detection across all selected lines! If any line is not commented out, we should be commenting.
         case .TOGGLE_COMMENT; {
             line_comment, block_comment_start, block_comment_end := document_get_comment_style(document);
             line_comment_length := count_utf8_chars(line_comment);
