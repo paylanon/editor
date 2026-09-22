@@ -6,7 +6,6 @@ TODO(jt): Known critical bugs:
 
 TODO(jt): Known serious bugs:
 
-- Project detection uses substring. This is incorrect. Should use sub-parts.
 - move_forward_word cycles on last line, if there are at least two words and a space after
 - Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
 - search_and_replace doesn't replace if second (either?) string is empty.
@@ -3324,10 +3323,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                         line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
                         line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
 
-                        if String.starts_with(line_view, line_comment_with_space) {
+                        if String.begins_with(line_view, line_comment_with_space) {
                             comments_action = .REMOVE;
                             text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
-                        } else if String.starts_with(line_view, line_comment) {
+                        } else if String.begins_with(line_view, line_comment) {
                             comments_action = .REMOVE;
                             text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
                         } else  {
@@ -3362,10 +3361,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                             line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
                             line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
 
-                            if String.starts_with(line_view, line_comment_with_space) {
+                            if String.begins_with(line_view, line_comment_with_space) {
                                 text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
                                 comments_action = .REMOVE;
-                            } else if String.starts_with(line_view, line_comment) {
+                            } else if String.begins_with(line_view, line_comment) {
                                 text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
                                 comments_action = .REMOVE;
                             }
@@ -5099,7 +5098,7 @@ get_working_directory_for_active_view :: (editor: Editor, search_for_project: bo
 
 get_project_directory_for_path :: (editor: Editor, path: string) -> success: bool, string {
     for editor.project_directories {
-        if String.starts_with(path, it) {
+        if path_begins_with(path, it) {
             return true, it;
         }
     }

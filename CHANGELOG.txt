@@ -26,6 +26,9 @@ Fixes:
 - Fix an arithmetic overflow crash in Jai_Lexer.
 - Fix divide by zero when displaying document position percent in the mode line.
 - Don't log each modification to a watched directory. (This spammed the logs per frame in certain cases.)
+- Clamp viewport to cursor when click into text buffer causes the cursor to go out of the viewport,
+  e.g. because we are horizontally scrolled and the clicked-on line is short.
+- Properly account for path parts when detecting project directories.
 
 Other:
 

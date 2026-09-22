@@ -207,11 +207,11 @@ string_bytes_iter :: (s: *string, body: Code, flags: For_Flags) #expand {
 // Path stuff
 //
 
-// Like path_filename, but extracts last N parts of the path. Returns actual number of paths.
+// Like path_filename, but extracts last N parts of the path. Returns actual number of path parts.
 path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
     count := 1;
 
-    index := find_index_from_right(path, "/");
+    index := find_index_from_right(path, #char "/");
     if index == -1 {
         return path, count;
     }
@@ -219,7 +219,7 @@ path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
     while count < n {
         count += 1;
 
-        index = find_index_from_right(path, "/", index - 1);
+        index = find_index_from_right(path, #char "/", index - 1);
         if index == -1 {
             return path, count;
         }
@@ -227,6 +227,41 @@ path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
 
     index += 1;
     return String.slice(path, index, path.count - index), count;
+}
+
+// Like begins_with, but accounts for path parts, so projects/jai is not a prefix of projects/jai-thingy,
+// but projects/jai is a prefix of projects/jai/thingy.
+path_begins_with :: (_path: string, _prefix: string) -> bool {
+    path   := _path;
+    prefix := _prefix;
+    
+    while path.count && prefix.count {
+        path_part_count   := String.find_index_from_left(path, #char "/");
+        prefix_part_count := String.find_index_from_left(prefix, #char "/");
+        path_advance   := path_part_count + 1;
+        prefix_advance := prefix_part_count + 1;
+
+        if path_part_count == -1 {
+            path_part_count = path.count;
+            path_advance    = path.count;
+        }
+        if prefix_part_count == -1 {
+            prefix_part_count = prefix.count;
+            prefix_advance    = prefix.count;
+        }
+        
+        path_part   := String.slice(path, 0, path_part_count);
+        prefix_part := String.slice(prefix, 0, prefix_part_count);
+        
+        if path_part != prefix_part {
+            return false;
+        }
+        
+        advance(*path, path_advance);
+        advance(*prefix, prefix_advance);
+    }
+    
+    return prefix.count == 0;
 }
 
 //

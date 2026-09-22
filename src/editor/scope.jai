@@ -188,7 +188,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
             if !inside_single_line_string && !inside_multi_line_string {
                 #if line_comment.count {
                     if inside_block_comment == 0 {
-                        if String.starts_with(slice(line_text, byte_index), line_comment) {
+                        if String.begins_with(slice(line_text, byte_index), line_comment) {
                             break; // Skip this line entirely.
                         }
                     }
@@ -196,7 +196,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
                 
                 #if block_comment_start.count && block_comment_end.count {
                     #if block_comments_can_nest {
-                        if String.starts_with(slice(line_text, byte_index), block_comment_start) {
+                        if String.begins_with(slice(line_text, byte_index), block_comment_start) {
                             inside_block_comment += 1;
                             
                             byte_index += block_comment_start.count - 1; // Advance over the block comment start.
@@ -204,7 +204,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
                         }
                     } else {
                         if inside_block_comment == 0 {
-                            if String.starts_with(slice(line_text, byte_index), block_comment_start) {
+                            if String.begins_with(slice(line_text, byte_index), block_comment_start) {
                                 inside_block_comment += 1;
                                 
                                 byte_index += block_comment_start.count - 1; // Advance over the block comment start.
@@ -213,7 +213,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
                         }
                     }
                     
-                    if String.starts_with(slice(line_text, byte_index), block_comment_end) {
+                    if String.begins_with(slice(line_text, byte_index), block_comment_end) {
                         #if block_comments_can_nest {
                             inside_block_comment -= 1;
                             inside_block_comment = max(inside_block_comment, 0);
@@ -233,7 +233,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
             
             #if single_line_string.count {
                 if !inside_multi_line_string {
-                    if String.starts_with(slice(line_text, byte_index), single_line_string) {
+                    if String.begins_with(slice(line_text, byte_index), single_line_string) {
                         if inside_single_line_string {
                             prev_is_backslash     := byte_index >= 1 && line_text[byte_index - 1] == "\\";
                             prevprev_is_backslash := byte_index >= 2 && line_text[byte_index - 2] == "\\";
@@ -250,7 +250,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
             
             #if multi_line_string.count {
                 if !inside_single_line_string {
-                    if String.starts_with(slice(line_text, byte_index), multi_line_string) {
+                    if String.begins_with(slice(line_text, byte_index), multi_line_string) {
                         if inside_multi_line_string {
                             prev_is_backslash     := byte_index >= 1 && line_text[byte_index - 1] == "\\";
                             prevprev_is_backslash := byte_index >= 2 && line_text[byte_index - 2] == "\\";

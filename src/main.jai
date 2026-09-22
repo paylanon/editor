@@ -317,7 +317,7 @@ main :: () {
                 files.allocator = temp;
 
                 visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] string) {
-                    if String.starts_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
+                    if String.begins_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
                         array_add(userdata, visit_info.full_name);
                     }
                 }
