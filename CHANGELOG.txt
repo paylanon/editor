@@ -5,7 +5,6 @@ New features:
 
 - Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
   triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
-
 - Directory lister now selects on click, and opens on double-click.
 
 Speed improvements:
@@ -24,6 +23,9 @@ without dropping a frame. We might need to switch to incremental strategies to g
 Fixes:
 
 - Scope parsing now respects strings. Having parentheses (and comments) within strings now won't mess with indentation.
+- Fix an arithmetic overflow crash in Jai_Lexer.
+- Fix divide by zero when displaying document position percent in the mode line.
+- Don't log each modification to a watched directory. (This spammed the logs per frame in certain cases.)
 
 Other:
 
