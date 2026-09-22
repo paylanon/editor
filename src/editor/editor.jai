@@ -14,7 +14,6 @@ TODO(jt): Known serious bugs:
 - Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
 - search_and_replace doesn't replace if second (either?) string is empty.
 - toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
-- mode line displays overflowing int literal instead of percent, when the document has just one line.
 
 TODO(jt): Roadmap:
 
@@ -4693,7 +4692,11 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
 
                 cursor  := view.cursors.c0;
-                percent := cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
+                
+                percent := 100;
+                if document.buffer.line_count > 1 {
+                    percent = cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
+                }
 
                 document_name := get_document_name(editor, document);
                 document_lang := get_document_lang(document);
@@ -4789,7 +4792,11 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
 
                 item_index := view.item_index;
-                percent := cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
+                
+                percent := 100;
+                if listing.items.count > 1 {
+                    percent = cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
+                }
 
                 listing_name := get_listing_name(editor, listing);
 
