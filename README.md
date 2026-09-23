@@ -1,3 +1,13 @@
+> 🛈 **Divergence Log:**
+>
+> minibuffer history (M-p, M-n)
+>
+> config file and runtime macros (F3 > F4)
+>
+> imenu (M-g-i)
+>
+> extended syntax and comment highlighting
+
 # My editor
 
 This is a small text editor I wrote for my personal use. The design goals are roughly:
