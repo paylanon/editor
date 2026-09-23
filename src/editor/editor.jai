@@ -5409,7 +5409,7 @@ get_working_directory_for_active_view :: (editor: Editor, search_for_project: bo
 
 get_project_directory_for_path :: (editor: Editor, path: string) -> success: bool, string {
     for editor.project_directories {
-        if String.starts_with(path, it) {
+        if path_begins_with(path, it) {
             return true, it;
         }
     }
