@@ -3,8 +3,15 @@ renderer_init :: (wt: Window_Type) {
     window = wt;
     _, _, window_width, window_height = get_dimensions(wt, false);
 
-    ld3d_options := LD3D_Options.{DEBUG_MODE, BACK_BUFFER_FORMAT, MAX_FRAMES_IN_FLIGHT};
-    boot_ld3d(window, ld3d_options);
+    #if DEBUG_MODE {
+        LD3D_FLAGS : LD3D_Boot_Flags : .DEBUG_MODE;
+    } else {
+        LD3D_FLAGS :: 0;
+    }
+    
+    boot_ld3d(LD3D_FLAGS);
+    
+    swapchain = create_swapchain(window, BACK_BUFFER_FORMAT, MAX_FRAMES_IN_FLIGHT);
 
     for * command_lists it.* = create_command_list(.DIRECT, tprint("direct [%]", it_index));
     fence_holder = create_fence_holder(MAX_FRAMES_IN_FLIGHT);
@@ -97,7 +104,7 @@ shader_init :: () {
     text_subpixel_bytecode[0] = String.slice(packed_shaders, offset[3], offset[4] - offset[3]);
     text_subpixel_bytecode[1] = String.slice(packed_shaders, offset[4], packed_shaders.count - offset[4]);
 
-    // common root signature
+    // common root signature desc
 
     root_params: [1] D3D12_ROOT_PARAMETER1;
 
@@ -139,8 +146,6 @@ shader_init :: () {
         .CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
 	// .DENY_PIXEL_SHADER_ROOT_ACCESS;
 
-    common_rs = create_root_signature(root_sig_desc);
-
     // common pipeline state stream
 
     // float3 position
@@ -175,12 +180,8 @@ shader_init :: () {
     {
         using pss: Pipeline_State_Stream;
 
-        root_sig = common_rs;
-
         input_layout.pInputElementDescs = vertex_desc.data;
         input_layout.NumElements = vertex_desc.count;
-
-        primitive_topology = .TRIANGLE;
 
         ds_format = .UNKNOWN;
         rt_formats.NumRenderTargets = 1;
@@ -228,7 +229,7 @@ shader_init :: () {
             color_bytecode[1].count.(u64)
         };
 
-        color_ps = create_pipeline_state(*pss, "EDITOR_COLOR");
+        color_pipeline = create_gpu_pipeline(root_sig_desc, pss, .TRIANGLELIST, "EDITOR_COLOR");
 
         vs = {
             text_bytecode[0].data,
@@ -240,7 +241,7 @@ shader_init :: () {
             text_bytecode[1].count.(u64)
         };
 
-        text_ps = create_pipeline_state(*pss, "EDITOR_TEXT");
+        text_pipeline = create_gpu_pipeline(root_sig_desc, pss, .TRIANGLELIST, "EDITOR_TEXT");
 
         vs = {
             text_subpixel_bytecode[0].data,
@@ -256,7 +257,7 @@ shader_init :: () {
         blend_desc.RenderTarget[0].DestBlend = .INV_SRC1_COLOR;
         blend_desc.RenderTarget[0].BlendOp = .ADD;
 
-        text_subpixel_ps = create_pipeline_state(*pss, "EDITOR_TEXT_SUBPIXEL");
+        text_subpixel_pipeline = create_gpu_pipeline(root_sig_desc, pss, .TRIANGLELIST, "EDITOR_TEXT_SUBPIXEL");
     }
 }
 
@@ -297,9 +298,11 @@ create_texture :: (texture_id: Editor.Texture_ID, data: [] u8, width: s32, heigh
     textures[texture_id] = texture;
 }
 
-renderer_create_texture_r8unorm :: (texture_id: Editor.Texture_ID, data: [] u8, width: s32, height: s32, filter: Editor.Texture_Filter) {
-    create_texture(texture_id, data, width, height, filter, .R8_UNORM);
-}
+renderer_create_texture_r8unorm :: #bake_arguments create_texture(format=.R8_UNORM);
+
+// renderer_create_texture_r8unorm :: (texture_id: Editor.Texture_ID, data: [] u8, width: s32, height: s32, filter: Editor.Texture_Filter) {
+    // create_texture(texture_id, data, width, height, filter, .R8_UNORM);
+// }
 
 renderer_create_texture_rgba8unorm :: (texture_id: Editor.Texture_ID, data: [] u8, width: s32, height: s32, filter: Editor.Texture_Filter) {
     create_texture(texture_id, data, width, height, filter, .R8G8B8A8_UNORM);
@@ -363,7 +366,7 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
             case .DRAW_COLOR_RECT; {
                 if pipeline != .COLOR {
                     if pipeline immediate_flush(cmd_list);
-                    set_pipeline(cmd_list, {null, color_ps, .TRIANGLELIST});
+                    set_gpu_pipeline(cmd_list, color_pipeline);
 				    pipeline = .COLOR;
                 }
 
@@ -383,7 +386,7 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
 
                 if pipeline != .TEXT {
                     if pipeline immediate_flush(cmd_list);
-                    set_pipeline(cmd_list, {null, text_ps, .TRIANGLELIST});
+                    set_gpu_pipeline(cmd_list, text_pipeline);
                     pipeline = .TEXT;
                 }
 
@@ -407,7 +410,7 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
 
                 if pipeline != .TEXT_SUBPIXEL {
                     if pipeline immediate_flush(cmd_list);
-					set_pipeline(cmd_list, {null, text_subpixel_ps, .TRIANGLELIST});
+					set_gpu_pipeline(cmd_list, text_subpixel_pipeline);
                     pipeline = .TEXT_SUBPIXEL;
                 }
 
@@ -511,11 +514,13 @@ Renderer_State :: struct {
     window: Window_Type;
     window_width:  s32;
     window_height: s32;
-
+    
+    swapchain:        *IDXGISwapChain4;
     common_rs:        *ID3D12RootSignature;
-    color_ps:         *ID3D12PipelineState;
-    text_ps:          *ID3D12PipelineState;
-    text_subpixel_ps: *ID3D12PipelineState;
+    
+    color_pipeline:          GPU_Pipeline;
+    text_pipeline:           GPU_Pipeline;
+    text_subpixel_pipeline:  GPU_Pipeline;
 
     cmd_list: *Command_List(.DIRECT);
     command_lists: [MAX_FRAMES_IN_FLIGHT] Command_List(.DIRECT);
@@ -798,5 +803,5 @@ using Math;
 // #import "d3d12";
 #import "d3d12"()(INCLUDE_DEBUG_BINDINGS = true);
 #import "dxgi";
-#import "ld3d"(AGILITY_SDK = false);
+#import "ld3d";
 #import "ld3d/lutils";

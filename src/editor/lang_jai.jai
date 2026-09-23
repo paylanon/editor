@@ -86,14 +86,16 @@ lang_jai_update_tokens :: (document: *Document) {
                     next_jl_token := JL.peek_next_token(*lexer,, temp);
                     if next_jl_token.type == {
                         case .KEYWORD_STRUCT; token.type = .STRUCT_DECLARATION;
+                        case .KEYWORD_ENUM_FLAGS; #through;
                         case .KEYWORD_ENUM;   token.type = .ENUM_DECLARATION;
-                        case .KEYWORD_INLINE;
+                        case .KEYWORD_INLINE;     #through;
                         case #char "(";       token.type = .PROC_DECLARATION;
+                        
                         case; token.type = .CONSTANT_DECLARATION;
                     }
                 }
             }
-                                     
+            
             case #char "("; {
                 if last_ident_token.type {
                     token = last_ident_token;
