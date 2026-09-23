@@ -117,6 +117,7 @@ TODO(jt): Roadmap:
 - [ ] Flash pasted text
 - [ ] Flash text inserted by undo/redo
 - [ ] Writing CRLF and CRLF navigation (cursor movement should skip over)
+- [ ] Configurable limits: max_filesize_to_open, max_filesize_to_watch (unless we make speed improvements), max_filesize_to_presume_utf8
 
 ... after beta ...
 
