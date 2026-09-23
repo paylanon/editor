@@ -55,6 +55,7 @@ abulafia_theme :: () -> Theme {
     background_color      := unpack_srgba(0x191919ff);
     modeline_color_active := unpack_srgba(0x090909ff);
     keyword_color         := unpack_srgba(0xe95410ff);
+    preprocessor_color    := unpack_srgba(0xff6b26ff);
 
     cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
     cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
@@ -82,9 +83,9 @@ abulafia_theme :: () -> Theme {
     t.system_text_color    = unpack_srgba(0xb0b0b0ff);
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
-    t.attribute_color      = keyword_color;
+    t.attribute_color      = preprocessor_color;
     t.attribute_variant    = .BOLD;
-    t.directive_color      = keyword_color;
+    t.directive_color      = preprocessor_color;
     t.directive_variant    = .BOLD;
     t.string_literal_color = unpack_srgba(0x98c379ff);
     t.number_literal_color = unpack_srgba(0x759fbfff);
