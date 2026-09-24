@@ -117,6 +117,7 @@ TODO(jt): Roadmap:
 - [ ] Flash pasted text
 - [ ] Flash text inserted by undo/redo
 - [ ] Writing CRLF and CRLF navigation (cursor movement should skip over)
+- [ ] Configurable limits: max_filesize_to_open, max_filesize_to_watch (unless we make speed improvements), max_filesize_to_presume_utf8
 
 ... after beta ...
 
@@ -283,7 +284,7 @@ Editor :: struct {
     panel_key_map:       Key_Map(Panel_Action);
     document_key_map:    Key_Map(Document_Action);
     compilation_key_map: Key_Map(Compilation_Action);
-    listing_key_map:     Key_Map(Listing_Action);    
+    listing_key_map:     Key_Map(Listing_Action);
     theme: Theme;
     
     config: Global_Config;
@@ -317,11 +318,10 @@ Editor :: struct {
     embark_panel: Mini_Panel;
     embark_act_proc: (*Editor, Input_Event, Platform); // XXX
     
-    // Embark_Mode :: enum u8 {
-    //     ACT_ON_WORD_AT_POINT;
-    //     ACT_ON_MINI_PANEL;
-    //     ACT_ON_MINI_PANEL_ITEM;
-    // } embark_mode: Embark_Mode;
+    Embark_Target :: enum u8 {
+        MINI_PANEL;
+        MINI_PANEL_ITEM;
+    } embark_target: Embark_Target;
     
     modal_interaction: Modal_Interaction;
 
@@ -589,7 +589,7 @@ Listing :: struct {
 
     Kind :: enum u32 {
         DIRECTORY;
-        MINI_PANEL_EXPORT;
+        GREP;
         // TODO(jt): Add VIEWS (unified) ... this is basically entitities.
         // TODO(jt): Add SEARCH_RESULTS?
         // TODO(jt): Add COMPILATION_ERRORS?
@@ -627,6 +627,7 @@ Mini_Panel :: struct {
     Item :: struct {
         text: string;
         text_color: Vector4;
+        text_style_ranges: [] Font_Style_Range;
         
         flags: Flags;
         highlight_x0: s64;
@@ -642,6 +643,9 @@ Mini_Panel :: struct {
             BINARY  :: 0x01;
             WARNING :: 0x02;
         }
+        
+        // context-specific
+        line_number: s64;
     }
 }
 
@@ -836,6 +840,24 @@ init :: (editor: *Editor, platform: Platform, renderer: Renderer, input: Input) 
         mini_panel.items.allocator = arena_allocator(mini_panel.items_arena);
 
         mini_panel.userdata_arena = make_arena(editor, platform, .SMALL, "Minipanel Userdata");
+    }
+    
+    //
+    // Init embark panel
+    //
+    {
+        embark_panel := *editor.embark_panel;
+
+        // mini_panel.key_map.allocator = arena_allocator(editor.perm_arena);
+        // key_map_reserve(*mini_panel.key_map, 128);
+
+        // Mini text buffer gets its own arena, because it survives longer than the items.
+        text_buffer_init(*embark_panel.buffer, make_arena(editor, platform, .SMALL, "Embark Buffer"));
+
+        embark_panel.items_arena = make_arena(editor, platform, .LARGE, "Embark Items");
+        embark_panel.items.allocator = arena_allocator(embark_panel.items_arena);
+
+        embark_panel.userdata_arena = make_arena(editor, platform, .SMALL, "Embark Userdata");
     }
 
     //
@@ -1247,12 +1269,26 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                 if item.flags & .WARNING {
                     color = editor.theme.mini_panel_item_warning_text_color;
                 }
+                
+                x0 := mini_panel_x0;
 
+                if item.line_number {
+                    
+                    font_layout_and_draw_text(*editor.font, tprint("%", item.line_number),
+                                              *render_commands, *atlas_update_regions,
+                                              { x0, offset_y }, scissor,
+                                              color, .REGULAR,
+                                              .[], .[],
+                                              binary = cast(bool, item.flags & .BINARY));
+                    
+                    x0 += SEARCH_LINE_NUMBER_PADDING * cell_w;
+                }
+                
                 font_layout_and_draw_text(*editor.font, item.text,
                                           *render_commands, *atlas_update_regions,
-                                          { mini_panel_x0, offset_y }, scissor,
+                                          { x0, offset_y }, scissor,
                                           color, .REGULAR,
-                                          .[], invert_ranges,
+                                          item.text_style_ranges, invert_ranges,
                                           binary = cast(bool, item.flags & .BINARY));
 
                 it_index += 1;
@@ -1991,7 +2027,7 @@ get_listing_name :: (editor: Editor, listing: Listing) -> string {
 
             return name;
         }
-        case .MINI_PANEL_EXPORT; return ""; // TODO(payl)
+        case .GREP; return ""; // TODO(payl)
     }
 }
 
@@ -2125,9 +2161,11 @@ sync_document_with_filesystem :: (editor: *Editor, platform: Platform, input: In
     }
 }
 
-embark_export :: (editor: *Editor, platform: Platform) {
+exported_arena: *Arena; // XXX
+
+embark_export :: (editor: *Editor, platform: Platform, input: Input) {
     
-    listing, listing_added := find_or_add_listing(editor, platform, .MINI_PANEL_EXPORT, "");
+    listing, listing_added := find_or_add_listing(editor, platform, .GREP, "");
 
     array_reset(*listing.items);
     table_reset(*listing.marked_items);
@@ -2140,10 +2178,19 @@ embark_export :: (editor: *Editor, platform: Platform) {
     if editor.active_view == .FULL {
         right_panel := array_add(*editor.panels);
         panel_init_with_listing(right_panel, editor, platform, listing);
+        editor.left_view_panel_index  = 0;
+        editor.right_view_panel_index = 1;
+        editor.active_view = .RIGHT;
     } else {
         panel := get_panel_for_inactive_view(editor);
         panel_set_listing(panel, editor, listing);
+        editor.active_view = .RIGHT;
     }
+    
+    exported_arena = editor.mini_panel.items_arena;
+    
+    if editor.mini_panel.procs.use_raw_input_for_history append_to_mini_panel_history(editor, platform, *editor.mini_panel);
+    close_mini_panel(editor, platform, input, exported=true);
 }
 
 #scope_file
@@ -2153,7 +2200,6 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
     
     if editor.embark_panel.open && editor.embark_act_proc {
         editor.embark_act_proc(editor, event, platform);
-        editor.embark_panel.open = false;
         return;
     }
 
@@ -5015,7 +5061,7 @@ draw_modeline :: (editor: *Editor, panel: Panel) #expand {
             
             listing_name := get_listing_name(editor, listing);
             
-            left_text  = tprint("Directory  %", listing_name);
+            left_text  = tprint("%  %", listing.kind, listing_name);
             right_text = tprint("%\% L%    ", percent, item_index + 1);
         }
     }
@@ -5040,14 +5086,27 @@ draw_modeline :: (editor: *Editor, panel: Panel) #expand {
     if draw_embark {
         
         // TODO(payl) :Config
-        embark_y    := modeline_y - 13 * `cell_h;
-        embark_rect := rect_from_point_and_size(`panel_x + padding * `cell_w, embark_y, 20 * `cell_w, 12 * `cell_h);
+        embark_y := modeline_y - 13 * `cell_h;
+        embark_x := `panel_x + padding * `cell_w;
+        embark_rect := rect_from_point_and_size(embark_x, embark_y, 20 * `cell_w, 12 * `cell_h);
         
         set_scissor(`render_commands, embark_rect);
         draw_rect(`render_commands, embark_rect, editor.theme.directive_color);
         
         embark_rect += {1, 1, -1, -2};
         draw_rect(`render_commands, embark_rect, darken(editor.theme.background_color, 0.1));
+        
+        for item: editor.embark_panel.items {
+            
+            
+        
+            font_layout_and_draw_text(*editor.font, item.text,
+                                      `render_commands, `atlas_update_regions,
+                                      { embark_x, embark_y }, embark_rect,
+                                      text_color, .REGULAR,
+                                      .[], .[],
+                                      binary = false);
+        }
     }
 }
 
@@ -5080,6 +5139,7 @@ append_to_mini_panel_history :: (editor: *Editor, platform: Platform, mini_panel
     if executed_str {
                 
         history_target := mini_panel.procs.history;
+        if !history_target return;
         
         dupe := history_target.elements.count && (peek(history_target.elements) == executed_str);
                 
@@ -5138,7 +5198,7 @@ walk_mini_panel_history :: (mini_panel: *Mini_Panel, forward: bool) {
 
 #scope_module
 
-close_mini_panel :: (editor: *Editor, platform: Platform, input: Input) {
+close_mini_panel :: (editor: *Editor, platform: Platform, input: Input, exported := false) {
     mini_panel := *editor.mini_panel;
     assert(mini_panel.open);
     
@@ -5151,7 +5211,7 @@ close_mini_panel :: (editor: *Editor, platform: Platform, input: Input) {
     key_map_flush(*mini_panel.key_map);
 
     array_reset(*mini_panel.items);
-    arena_reset(mini_panel.items_arena);
+    if !exported arena_reset(mini_panel.items_arena);
     mini_panel.item_index = 0;
 
     arena_reset(mini_panel.userdata_arena);
@@ -5573,7 +5633,7 @@ find_or_add_listing :: (editor: *Editor, platform: Platform, $kind: Listing.Kind
     debug_label_name: string;
     if #complete kind == {
         case .DIRECTORY;          debug_label_name = String.path_filename(backing_directory_path);
-        case .MINI_PANEL_EXPORT;  debug_label_name = tprint("%", editor.mini_panel.procs); // XXX
+        case .GREP;               debug_label_name = tprint("%", editor.mini_panel.procs); // XXX
     }
 
     // TODO(jt): @Leak The sprint below leaks into perm.

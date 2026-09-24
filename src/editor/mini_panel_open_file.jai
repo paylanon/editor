@@ -157,6 +157,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
 
                 item := array_add(*mp.items);
                 item.text = s;
+                if String.begins_with(s, ".") item.text_color = darken(editor.theme.text_color, 0.1);
                 item.highlight_x0 = x0;
                 item.highlight_x1 = x0 + filename_part1_char_count;
                 item.userdata = null;

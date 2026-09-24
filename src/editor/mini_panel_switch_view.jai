@@ -28,7 +28,12 @@ can_select_text_line :: (editor: *Editor, platform: Platform, input: Input) -> b
     return false;
 }
 
-init :: (editor: *Editor, platform: Platform, input: Input) { editor.embark_act_proc = embark_act; }
+init :: (editor: *Editor, platform: Platform, input: Input) {
+    // editor.embark_act_proc = embark_act;
+    // arena_reset(editor.embark_panel.items_arena);
+    item := array_add(*editor.embark_panel.items);
+    item.text = "test";
+}
 
 embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {}
 
@@ -83,6 +88,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
 
                 item := array_add(*mini_panel.items);
                 item.text = s;
+                if String.begins_with(s, "*") item.text_color = darken(editor.theme.text_color, 0.1);
                 item.flags = ifx it.flags & .MODIFIED then .WARNING;
                 item.highlight_x0 = x0;
                 item.highlight_x1 = x0 + search_part1_char_count;

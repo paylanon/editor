@@ -64,7 +64,7 @@ resize_swapchain :: () {
     flush_command_queue(.DIRECT, *fence_holder);
     FFI = 0;
     
-    for 0..MAX_FRAMES_IN_FLIGHT-1 free_resource_view(render_targets[it], false);
+    for 0..MAX_FRAMES_IN_FLIGHT-1 free_resource_view(render_targets[it]);
     
     reset_descriptor_heap(*rtv_descriptors);
     
@@ -77,7 +77,7 @@ resize_swapchain :: () {
         xx (DXGI_SWAP_CHAIN_FLAG.ALLOW_TEARING | DXGI_SWAP_CHAIN_FLAG.ALLOW_MODE_SWITCH)
     ));
     
-    flush_command_queue(.DIRECT, *fence_holder); // XXX
+    create_window_targets();
 }
 
 shader_init :: () {
@@ -264,7 +264,9 @@ shader_init :: () {
 renderer_update :: (wt: Window_Type) {
     
     _, _, new_window_width, new_window_height := get_dimensions(wt, false);
-    if new_window_width != window_width || new_window_height != window_height {
+    if new_window_width != window_width || new_window_height != window_height {        
+        window_width = new_window_width;
+        window_height = new_window_height;
         resize_swapchain();
     }
 }
@@ -447,7 +449,7 @@ renderer_submit_frame :: () {
     cmd_list = null;
 
     PRESENT_PARAMS :: DXGI_PRESENT_PARAMETERS.{0, null, null, null};
-    hrcheck(IDXGISwapChain1_Present1(xx ld3d_context().swapchain, 0, 0, *PRESENT_PARAMS));
+    hrcheck(IDXGISwapChain1_Present1(xx ld3d_context().swapchain, xx VSYNC, 0, *PRESENT_PARAMS));
 
     fence_holder.value[FFI] += 1;
     ID3D12CommandQueue_Signal(ld3d_context().direct_command_queue, fence_holder.fence[FFI], fence_holder.value[FFI]); // @TODO wrap
@@ -463,20 +465,6 @@ renderer_submit_frame :: () {
     pipeline = .NONE;
 
     // assert(false);
-
-    // :WindowVSync
-    //
-    // @Hack wglSwapInterval unfortunately does nothing (at least on my computer/drivers).
-    // This seems to help and I noticed no bad side effects yet. However, some people
-    // experienced stutter with DwmFlush, so we need to watch this closely.
-    //
-    // More discussion here: https://github.com/glfw/glfw/issues/2733
-    // #if OS == .WINDOWS {
-    //     hresult := DwmFlush();
-    //     if hresult != S_OK {
-    //         log_error("Call to DwmFlush failed: %", hresult);
-    //     }
-    // }
 }
 
 // ------------------------------------------------------------
@@ -484,18 +472,14 @@ renderer_submit_frame :: () {
 
 LUTILS_LOG_MSGR :: "renderer";
 
-DEBUG_MODE :: false;
+DEBUG_MODE :: true;
 MAX_FRAMES_IN_FLIGHT :: 3;
 MAX_TEXTURES :: 4;
 MAX_SHADER_RESOURCES :: MAX_TEXTURES;
+VSYNC :: false;
 
 BACK_BUFFER_FORMAT   :: DXGI_FORMAT.R8G8B8A8_UNORM;
 DEPTH_STENCIL_FORMAT :: DXGI_FORMAT.D24_UNORM_S8_UINT;
-
-#if OS == .WINDOWS {
-    Dwmapi :: #library,system "Dwmapi";
-    DwmFlush :: () -> HRESULT #foreign Dwmapi;
-}
 
 Texture :: struct {
 
@@ -801,7 +785,7 @@ using Window;
 using Math;
 
 // #import "d3d12";
-#import "d3d12"()(INCLUDE_DEBUG_BINDINGS = true);
+#import "d3d12"()(INCLUDE_DEBUG_BINDINGS = DEBUG_MODE);
 #import "dxgi";
 #import "ld3d";
 #import "ld3d/lutils";

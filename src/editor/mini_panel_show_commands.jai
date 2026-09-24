@@ -101,7 +101,11 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
             array_add(*actions_to_search_values, 0);
         }
         
+        // @NOTE(payl): never felt too good about using macros
+        // like this, but alas my textbook says DRY
+        
         check_history :: (name: string, kind: Action_Kind) -> bool #expand {
+            
             if `history_cursor && String.equal_nocase(name, history.elements[`history_cursor-1]) {
                 index := history.elements.count - `history_cursor;
                 `actions_to_search_names[index] = `action_text;
@@ -111,14 +115,14 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                 return true;
             } else return false;
         }
-                
+        
         for PANEL_ACTION_NAMES {
             if it != "NONE" {
                 
                 key_map := *editor.panel_key_map;
                 action  := PANEL_ACTIONS_VALUES[it_index];
                 action_text := build_action_text(action, it, key_map);
-                
+                      
                 if check_history(it, .PANEL) continue;
                 
                 array_add(*actions_to_search_names, action_text);
@@ -217,6 +221,16 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
         }
         
         assert(!history_cursor);
+        
+        style_ranges := NewArray(2, Font_Style_Range,, arena_allocator(mini_panel.items_arena));
+        action_style := *style_ranges[0];
+        shortcut_style := *style_ranges[1];
+        action_style.x0 = 0;
+        action_style.x1 = ACTION_TEXT_PADDING - 1;
+        action_style.color = editor.theme.text_color;
+        shortcut_style.x0 = ACTION_TEXT_PADDING;
+        shortcut_style.x1 = ACTION_TEXT_PADDING * 2;
+        shortcut_style.color = editor.theme.comment_color;
 
         for actions_to_search_names {
             found, found_indices := line_search(it, search_parts, smartcase,, temp);
@@ -229,6 +243,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
 
                 item := array_add(*mini_panel.items);
                 item.text = s;
+                item.text_style_ranges = style_ranges;
                 item.highlight_x0 = x0;
                 item.highlight_x1 = x0 + search_part1_char_count;
 
@@ -379,11 +394,12 @@ cancel :: (editor: *Editor, platform: Platform, input: Input) {
     close_mini_panel(editor, platform, input);
 }
 
+ACTION_TEXT_PADDING :: 40;
 build_action_text :: (action: s64, action_name: string, key_map: Key_Map) -> /* Temporary_Storage */ string {
     sb: String_Builder;
     sb.allocator = temp;
 
-    action_padded := temp_right_pad(action_name, 40);
+    action_padded := temp_right_pad(action_name, ACTION_TEXT_PADDING);
     String.to_lower_in_place(action_padded);
 
     append(*sb, action_padded);

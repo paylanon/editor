@@ -58,6 +58,8 @@ Theme :: struct {
     mini_panel_line_color: Vector4;
     mini_panel_item_text_color: Vector4;
     mini_panel_item_warning_text_color: Vector4;
+    
+    embark_selection_color: Vector4;
 
     invert_color_under_selection: bool;
     // TODO(jt): invert_color_under_highlight: bool;
@@ -81,6 +83,7 @@ abulafia_theme :: () -> Theme {
     background_color      := unpack_srgba(0x191919ff);
     modeline_color        := unpack_srgba(0x090909ff);
     keyword_color         := unpack_srgba(0xe95410ff);
+    preprocessor_color    := unpack_srgba(0xff6b26ff);
 
     cursor_minus_1 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.200);
     cursor_minus_2 := set_alpha(adjust_saturation_and_value(cursor_color, 0.25, 1.2), 0.100);
@@ -110,9 +113,9 @@ abulafia_theme :: () -> Theme {
     t.system_text_color_inactive = t.system_text_color;
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
-    t.attribute_color      = keyword_color;
+    t.attribute_color      = preprocessor_color;
     t.attribute_variant    = .BOLD;
-    t.directive_color      = keyword_color;
+    t.directive_color      = preprocessor_color;
     t.directive_variant    = .BOLD;
     t.string_literal_color = unpack_srgba(0x98c379ff);
     t.number_literal_color = unpack_srgba(0x759fbfff);
@@ -430,6 +433,8 @@ sokoban_theme :: () -> Theme {
     t.mini_panel_line_color      = cursor_minus_2;
     t.mini_panel_item_text_color = text_color;
     t.mini_panel_item_warning_text_color = unpack_srgba(0xe95410ff);
+    
+    t.embark_selection_color = method_color;
 
     t.warning_color = unpack_srgba(0xffe6b3ff);
     t.error_color = unpack_srgba(0xc49191ff);
