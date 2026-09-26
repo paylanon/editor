@@ -223,14 +223,11 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
         assert(!history_cursor);
         
         style_ranges := NewArray(2, Font_Style_Range,, arena_allocator(mini_panel.items_arena));
-        action_style := *style_ranges[0];
-        shortcut_style := *style_ranges[1];
-        action_style.x0 = 0;
-        action_style.x1 = ACTION_TEXT_PADDING - 1;
-        action_style.color = editor.theme.text_color;
-        shortcut_style.x0 = ACTION_TEXT_PADDING;
-        shortcut_style.x1 = ACTION_TEXT_PADDING * 2;
-        shortcut_style.color = editor.theme.comment_color;
+        style_ranges[0].x1 = ACTION_TEXT_PADDING - 1;
+        style_ranges[0].color = editor.theme.text_color;
+        style_ranges[1].x0 = ACTION_TEXT_PADDING;
+        style_ranges[1].x1 = ACTION_TEXT_PADDING * 2;
+        style_ranges[1].color = editor.theme.comment_color;
 
         for actions_to_search_names {
             found, found_indices := line_search(it, search_parts, smartcase,, temp);

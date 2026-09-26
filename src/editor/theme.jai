@@ -59,7 +59,7 @@ Theme :: struct {
     mini_panel_item_text_color: Vector4;
     mini_panel_item_warning_text_color: Vector4;
     
-    embark_selection_color: Vector4;
+    embark_target_color: Vector4;
 
     invert_color_under_selection: bool;
     // TODO(jt): invert_color_under_highlight: bool;
@@ -178,7 +178,8 @@ naysayer_theme :: () -> Theme {
 handmade_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0x40ff40ff);
     text_color            := unpack_srgba(0xcdaa7dff);
-    background_color      := unpack_srgba(0x191919ff);
+    // background_color      := unpack_srgba(0x191919ff);
+    background_color      := unpack_srgba(0x161616ff);
     modeline_color        := unpack_srgba(0x090909ff);
     keyword_color         := unpack_srgba(0xc38d03ff);
 
@@ -383,12 +384,13 @@ visual_studio_light_theme :: () -> Theme {
 sokoban_theme :: () -> Theme {
     cursor_color          := unpack_srgba(0xc9c9bfff);
     text_color            := unpack_srgba(0xd4c7b4ff);
-    background_color      := unpack_srgba(0x111111ff);
+    // background_color      := unpack_srgba(0x111111ff);
+    background_color      := unpack_srgba(0x121212ff);
     keyword_color         := unpack_srgba(0xddddddff);
     method_color          := unpack_srgba(0xc1d1e3ff);
     highlight_color       := unpack_srgba(0x70a0f0ff);
 
-    cursor_minus_2 := set_alpha(adjust_saturation(cursor_color, 0.3), 0.1);
+    cursor_minus_2 := set_alpha(adjust_saturation(cursor_color, .3), .1);
     
     t: Theme;
     t.builtin_index = .Sokoban;
@@ -396,9 +398,11 @@ sokoban_theme :: () -> Theme {
     t.cursor_color_hot           = { 1, 1, 1, 1 };
     t.cursor_color_readonly      = { 1, 0, 0, 1 };
     t.line_color                 = { 0, 0, 0, 0 };
-    t.selection_color            = unpack_srgba(0x5f5f6eff);
-    t.highlight_color            = set_alpha(highlight_color, 0.4);
-    t.highlight_color_active     = set_alpha(highlight_color, 0.6);
+    // t.selection_color            = unpack_srgba(0x5f5f6eff);
+    // t.selection_color            = unpack_srgba(0x0000ffff);
+    t.selection_color            = darken(highlight_color, .6);
+    t.highlight_color            = set_alpha(highlight_color, .4);
+    t.highlight_color_active     = set_alpha(highlight_color, .6);
     t.matching_parenthesis_color = highlight_color;
 
     t.background_color           = background_color;
@@ -412,8 +416,8 @@ sokoban_theme :: () -> Theme {
     // a la doom modeline
     t.modeline_color             = unpack_srgba(0x171717ff);
     t.modeline_color_inactive    = t.modeline_color;
-    t.system_text_color          = darken(text_color, 0.1);
-    t.system_text_color_inactive = darken(unpack_srgba(0xc5c5c9ff), 0.4);
+    t.system_text_color          = darken(text_color, .1);
+    t.system_text_color_inactive = darken(unpack_srgba(0xc5c5c9ff), .4);
     
     t.text_color           = text_color;
     t.keyword_color        = keyword_color;
@@ -434,7 +438,7 @@ sokoban_theme :: () -> Theme {
     t.mini_panel_item_text_color = text_color;
     t.mini_panel_item_warning_text_color = unpack_srgba(0xe95410ff);
     
-    t.embark_selection_color = method_color;
+    t.embark_target_color = whiten(unpack_srgba(0x0000ffff), .4);
 
     t.warning_color = unpack_srgba(0xffe6b3ff);
     t.error_color = unpack_srgba(0xc49191ff);

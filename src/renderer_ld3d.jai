@@ -378,10 +378,13 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
                     { it.rect.x0, it.rect.y1 },
                     { it.rect.x1, it.rect.y1 },
                     { it.rect.x1, it.rect.y0 },
-                    it.color,
+                    it.color[0],
+                    it.color[1],
+                    it.color[2],
+                    it.color[3],
                 );
             }
-
+            
             case .DRAW_TEXT; {
                 if !it.texture_id return;
                 texture := textures[it.texture_id];
@@ -398,7 +401,7 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
                     { it.rect.x0, it.rect.y1 },
                     { it.rect.x1, it.rect.y1 },
                     { it.rect.x1, it.rect.y0 },
-                    it.color,
+                    it.color[0],
                     { it.texture_rect.x0, it.texture_rect.y0 },
                     { it.texture_rect.x0, it.texture_rect.y1 },
                     { it.texture_rect.x1, it.texture_rect.y1 },
@@ -422,7 +425,7 @@ renderer_draw :: (render_commands: [] Editor.Render_Command) {
                     { it.rect.x0, it.rect.y1 },
                     { it.rect.x1, it.rect.y1 },
                     { it.rect.x1, it.rect.y0 },
-                    it.color,
+                    it.color[0],
                     { it.texture_rect.x0, it.texture_rect.y0 },
                     { it.texture_rect.x0, it.texture_rect.y1 },
                     { it.texture_rect.x1, it.texture_rect.y1 },
@@ -472,7 +475,7 @@ renderer_submit_frame :: () {
 
 LUTILS_LOG_MSGR :: "renderer";
 
-DEBUG_MODE :: true;
+DEBUG_MODE :: false;
 MAX_FRAMES_IN_FLIGHT :: 3;
 MAX_TEXTURES :: 4;
 MAX_SHADER_RESOURCES :: MAX_TEXTURES;
@@ -593,18 +596,11 @@ set_projection :: (target_width: s32, target_height: s32) {
     frame_props.proj = m;
 }
 
-immediate_quad :: (
-    cmd_list: *Command_List(.DIRECT),
-    p0: Vector2,
-    p1: Vector2,
-    p2: Vector2,
-    p3: Vector2,
-    color := Vector4.{1,1,1,1},
-    uv0 := Vector2.{0,0},
-    uv1 := Vector2.{1,0},
-    uv2 := Vector2.{1,1}, 
-    uv3 := Vector2.{0, 1}
-) {
+// Four 2D points making an arbitrary quad, plus a color,
+// and optional uv coordinates for mapping a texture:
+immediate_quad :: (cmd_list: *Command_List(.DIRECT), 
+                   p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, color := Vector4.{1,1,1,1},
+                   uv0 := Vector2.{0,0}, uv1 := Vector2.{1,0}, uv2 := Vector2.{1,1}, uv3 := Vector2.{0, 1}) {
     
     CheckSpace(cmd_list, 6);
 
@@ -615,6 +611,23 @@ immediate_quad :: (
     put_vertex(*v[3], p0, color,  uv0.x, uv0.y);
     put_vertex(*v[4], p2, color,  uv2.x, uv2.y);
     put_vertex(*v[5], p3, color,  uv3.x, uv3.y);
+}
+
+// A 2D quad with different colors at each vertex:
+immediate_quad :: (cmd_list: *Command_List(.DIRECT),
+                   p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2,
+                   c0: Vector4, c1: Vector4, c2: Vector4, c3: Vector4,
+                   uv0 := Vector2.{0,0}, uv1 := Vector2.{1,0}, uv2 := Vector2.{1,1}, uv3 := Vector2.{0, 1}) {
+    
+    CheckSpace(cmd_list, 6);
+
+    put_vertex(*v[0], p0, c0,  uv0.x, uv0.y);
+    put_vertex(*v[1], p1, c1,  uv1.x, uv1.y);
+    put_vertex(*v[2], p2, c2,  uv2.x, uv2.y);
+
+    put_vertex(*v[3], p0, c0,  uv0.x, uv0.y);
+    put_vertex(*v[4], p2, c2,  uv2.x, uv2.y);
+    put_vertex(*v[5], p3, c3,  uv3.x, uv3.y);
 }
 
 immediate_flush :: (cmd_list: *Command_List(.DIRECT)) {

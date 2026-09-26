@@ -305,42 +305,42 @@ Font_Invert_Range :: struct {
     using range: Font_Range;
 }
 
-get_style_for_token_type :: (editor: *Editor, token_type: Token_Type) -> color: Vector4, variant: Font_Variant {
+get_style_for_token_type :: (theme: Theme, token_type: Token_Type) -> color: Vector4, variant: Font_Variant {
     color: Vector4;
     variant: Font_Variant;
     
     if #complete token_type == {
         // These should not get here, but in case they do, we assign the defaults.
-        case .UNINITIALIZED;   color = editor.theme.text_color; variant = editor.theme.text_variant;
-        case .INVALID;         color = editor.theme.text_color; variant = editor.theme.text_variant;
-        case .END_OF_INPUT;    color = editor.theme.text_color; variant = editor.theme.text_variant;
+        case .UNINITIALIZED;   color = theme.text_color; variant = theme.text_variant;
+        case .INVALID;         color = theme.text_color; variant = theme.text_variant;
+        case .END_OF_INPUT;    color = theme.text_color; variant = theme.text_variant;
         
         // TODO(jt): @Cleanup While we sort of define color constants for things, we
         // also can modify bold/italic, for which we have no way of customization
         // yet. :Config
-        case .KEYWORD;         color = editor.theme.keyword_color; variant = editor.theme.keyword_variant;
-        case .NUMBER_LITERAL;  color = editor.theme.number_literal_color; variant = editor.theme.number_literal_variant;
+        case .KEYWORD;         color = theme.keyword_color; variant = theme.keyword_variant;
+        case .NUMBER_LITERAL;  color = theme.number_literal_color; variant = theme.number_literal_variant;
         case .STRING_LITERAL;  #through;
-        case .CHAR_LITERAL;    color = editor.theme.string_literal_color; variant = editor.theme.string_literal_variant;
+        case .CHAR_LITERAL;    color = theme.string_literal_color; variant = theme.string_literal_variant;
         
         // These should not get here, but in case they do, we assign the defaults.
-        case .PUNCTUATION;     color = editor.theme.text_color; variant = editor.theme.text_variant;
-        case .IDENTIFIER;      color = editor.theme.text_color; variant = editor.theme.text_variant;
+        case .PUNCTUATION;     color = theme.text_color; variant = theme.text_variant;
+        case .IDENTIFIER;      color = theme.text_color; variant = theme.text_variant;
         
-        case .ATTRIBUTE;       color = editor.theme.attribute_color; variant = editor.theme.attribute_variant;
-        case .DIRECTIVE;       color = editor.theme.directive_color; variant = editor.theme.directive_variant;
+        case .ATTRIBUTE;       color = theme.attribute_color; variant = theme.attribute_variant;
+        case .DIRECTIVE;       color = theme.directive_color; variant = theme.directive_variant;
         
         case .LINE_COMMENT;    #through;
-        case .BLOCK_COMMENT;   color = editor.theme.comment_color; variant = editor.theme.comment_variant;
+        case .BLOCK_COMMENT;   color = theme.comment_color; variant = theme.comment_variant;
         
         
-        case .STRUCT_DECLARATION;    color = editor.theme.struct_declaration_color; variant = editor.theme.struct_declaration_variant;
-        case .ENUM_DECLARATION;      color = editor.theme.enum_declaration_color; variant = editor.theme.enum_declaration_variant;
-        case .PROC_DECLARATION;      color = editor.theme.proc_declaration_color; variant = editor.theme.proc_declaration_variant;
-        case .CONSTANT_DECLARATION;  color = editor.theme.constant_declaration_color; variant = editor.theme.constant_declaration_variant;
+        case .STRUCT_DECLARATION;    color = theme.struct_declaration_color; variant = theme.struct_declaration_variant;
+        case .ENUM_DECLARATION;      color = theme.enum_declaration_color; variant = theme.enum_declaration_variant;
+        case .PROC_DECLARATION;      color = theme.proc_declaration_color; variant = theme.proc_declaration_variant;
+        case .CONSTANT_DECLARATION;  color = theme.constant_declaration_color; variant = theme.constant_declaration_variant;
         
-        case .TYPE_IDENTIFIER;       color = editor.theme.struct_declaration_color; variant = editor.theme.text_variant;
-        case .PROC_CALL;             color = editor.theme.proc_declaration_color; variant = editor.theme.text_variant;
+        case .TYPE_IDENTIFIER;       color = theme.struct_declaration_color; variant = theme.text_variant;
+        case .PROC_CALL;             color = theme.proc_declaration_color; variant = theme.text_variant;
     }
     
     return color, variant;
@@ -666,7 +666,7 @@ _font_layout_and_draw_text :: (font: *Font, text: string,
                 cast(f32, glyph_bitmap_height) / font.glyph_atlas_height_in_pixels,
             );
             command.texture_id = font.texture_id;
-            command.color = glyph_color;
+            command.color[0] = glyph_color;
         }
 
         cursor_x += glyph_advance;

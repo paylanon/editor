@@ -15,6 +15,8 @@ mini_panel_imenu_procs: Mini_Panel_Procs = {
 
 history: Mini_Panel_History;
 
+filter: Token_Type;
+
 Search_Userdata :: struct {
     original_x: s64; // Not used for listings.
     original_y: s64;
@@ -57,6 +59,31 @@ init :: (editor: *Editor, platform: Platform, input: Input) {
     }
 
     mini_panel.userdata = userdata;
+    
+    array_reset(*editor.embark_panel.items);
+    editor.embark_target = .MINI_PANEL;
+    editor.embark_act_proc = embark_act;
+    item := array_add(*editor.embark_panel.items);
+    item.text = "1 Filter to Struct";
+    item = array_add(*editor.embark_panel.items);
+    item.text = "2 Filter to Enum";
+    item = array_add(*editor.embark_panel.items);
+    item.text = "3 Filter to Proc";
+    item = array_add(*editor.embark_panel.items);
+    item.text = "0 Reset Filter";
+}
+
+embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {
+    
+    if event.codepoint == {
+        case; return;
+        case #char "1"; filter = .STRUCT_DECLARATION;
+        case #char "2"; filter = .ENUM_DECLARATION;
+        case #char "3"; filter = .PROC_DECLARATION;
+        case #char "0"; filter = .UNINITIALIZED;
+    }
+    update(editor, platform, {}, true, false);
+    editor.embark_panel.open = false; // XXX close_embark_panel()
 }
 
 update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bool, selected_item_changed: bool) {
@@ -95,6 +122,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     new_item_index := -1;
                     
                     for document.tokens {
+                        if filter then if it.type != filter continue;
                         if !(it.type == .STRUCT_DECLARATION || it.type == .ENUM_DECLARATION || it.type == .PROC_DECLARATION) continue;
                         
                         token := it;
@@ -122,7 +150,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                             // need for string alloc.
                             
                             item.text = ident;
-                            item.text_color = get_style_for_token_type(editor, it.type);
+                            item.text_color = get_style_for_token_type(document.theme, it.type);
                             item.highlight_x0 = x0;
                             item.highlight_x1 = x0 + search_part1_char_count;
                             

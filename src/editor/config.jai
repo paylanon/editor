@@ -13,6 +13,14 @@ Global_Config :: struct {
     cursor_anim_duration_keyboard_direct:   f32 = 0.00;
     cursor_anim_duration_keyboard_indirect: f32 = 0.15;
     cursor_anim_duration_mouse:             f32 = 0.15;
+    
+    // @TODO(payl) :Config
+    octocamo := Enumerated_Array(Document.Lang, Theme).{
+        TEXT = {},
+        C    = #run handmade_theme(),
+        JAI  = {},
+        GLSL = {}
+    };
 }
 
 parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {

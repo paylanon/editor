@@ -51,6 +51,10 @@ f64 :: float64;
 DEBUG_MEMORY :: false;
 DEBUG_MEMORY_LEAK_REPORT_PERIOD: Apollo_Time : #run seconds_to_apollo(10);
 
+// TODO(payl) :Config
+DEFAULT_WINDOW_WIDTH  :: 1600;
+DEFAULT_WINDOW_HEIGHT :: 1200;
+
 /*
 
 TODO(jt): @LibraryBug Investigate more and mail this in!
@@ -358,7 +362,7 @@ main :: () {
         thread_start(*thread);
     }
 
-    window := Window.create_window(1920, 1200, "editor");
+    window := Window.create_window(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, "editor");
     renderer_init(window);
 
     platform: Editor.Platform;

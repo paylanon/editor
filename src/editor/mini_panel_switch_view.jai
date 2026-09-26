@@ -29,13 +29,19 @@ can_select_text_line :: (editor: *Editor, platform: Platform, input: Input) -> b
 }
 
 init :: (editor: *Editor, platform: Platform, input: Input) {
-    // editor.embark_act_proc = embark_act;
-    // arena_reset(editor.embark_panel.items_arena);
+    array_reset(*editor.embark_panel.items);
+    editor.embark_target = .MINI_PANEL_ITEM;
+    editor.embark_act_proc = embark_act;
     item := array_add(*editor.embark_panel.items);
     item.text = "test";
 }
 
-embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {}
+embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {
+    if event.codepoint == #char "k" {
+        editor.embark_panel.items[0].highlight_x0 = 1;
+        // editor.embark_panel.open = false; // XXX close_embark_panel()
+    }
+}
 
 update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bool, selected_item_changed: bool) {
     mini_panel := *editor.mini_panel;

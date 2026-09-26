@@ -298,7 +298,7 @@ key_map_find_shortcut :: (key_map: Key_Map($T), action: T) -> Shortcut {
         }
     }
 
-    return default_of(Shortcut);
+    return {};
 }
 
 key_map_add :: (key_map: *Key_Map($T), shortcut_string: string, action: T) {
@@ -401,6 +401,15 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
     return false, default_of(T), {};
 }
 
+
+// TODO(jt): @Cleanup default_of may become a JAI builtin and we can remove ours.
+// NOTE(payl): {} should serve this purpose but doesn't always work as intended;
+// it's worth keeping this around I think
+default_of :: ($T: Type) -> T #expand {
+    value: T;
+    return value;
+}
+
 #scope_file
 
 InitAllocators :: (key_map: *Key_Map) #expand {
@@ -430,10 +439,4 @@ is_modifier_key_event :: (event: Input_Event) -> bool {
     }
 
     return false;
-}
-
-// TODO(jt): @Cleanup default_of may become a JAI builtin and we can remove ours.
-default_of :: ($T: Type) -> T #expand {
-    value: T;
-    return value;
 }

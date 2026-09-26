@@ -5,7 +5,9 @@ Render_Command :: struct {
     rect: Rect;
     texture_rect: Rect;              // Unused for SET_SCISSOR, DRAW_COLOR_RECT
     texture_id: Texture_ID;          // Unused for SET_SCISSOR, DRAW_COLOR_RECT
-    color := Vector4.{ 0, 0, 0, 1 }; // Unused for SET_SCISSOR
+    // color := Vector4.{ 0, 0, 0, 1 }; // Unused for SET_SCISSOR
+    color: [4] Vector4;        // Unused for SET_SCISSOR, DRAW_COLOR_RECT
+    color[0] = Vector4.{ 0, 0, 0, 1 };
 }
 
 Render_Command_Type :: enum u32 {
