@@ -7,6 +7,10 @@
 > imenu (M-g-i)
 >
 > extended syntax and comment highlighting
+> 
+> minibuffer embark-act (C-.)
+>
+> 'octocamo' - dynamic theme per language mode
 
 # My editor
 
