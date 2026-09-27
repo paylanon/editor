@@ -96,6 +96,8 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                 if document {
                     old_cursor_y   := view.cursors.c0.y;
                     new_item_index := -1;
+                    
+                    gap_buffer_move_gap_to(*document.buffer.gb, 0);
 
                     // TODO(jt): @Speed This causes us to miss frames above 4MB buffers. It is serviceable
                     // up to about 64MB, but this definitely needs to be 100x faster. An easy win would be
