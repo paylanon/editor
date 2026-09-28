@@ -54,6 +54,18 @@ find_index_from_right :: (s: string, byte: u8, start_index := S64_MAX) -> s64  #
     return -1;
 }
 
+contains_only_whitespace :: (s: string) -> bool {
+    only_whitespace := true;
+    for s {
+        if !is_space(it) {
+            only_whitespace = false;
+            break;
+        }
+    }
+    
+    return only_whitespace;
+}
+
 // TODO(jt): @Cleanup This is a simpler overload of slice from modules/String. We should mail this in.
 // An additional modification is the change from assert to sanity_assert+clamp, because asserts harm codegen
 // (verified in beta 0.2.030), producing additional basic blocks and machine code. Real-world performance suffers.

@@ -5,10 +5,6 @@ TODO(jt): Known critical bugs:
 - Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
 - Text buffer crash insert on Ondy's PDF. (See text_buffer.jai:2297)
 
-TODO(jt): Known serious bugs:
-
-- toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
-
 TODO(jt): Roadmap:
 
 - [X] Display text on screen
@@ -3302,8 +3298,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             line_comment_with_space := tprint("% ", line_comment);
             line_comment_with_space_length := line_comment_length + 1; // +1 okay, because space is ASCII.
 
-            // TODO(jt): Preserve cursors and send them into the thing manually.
-            if view.cursors.c0 == view.cursors.c1 || view.cursors.c0.x == 0 && view.cursors.c1.x == 0 {
+            if view.cursors.c0 == view.cursors.c1 || view.cursors.c0.x == view.cursors.c1.x {
                 // 2 cases:
                 // - Single line, and no selection on the line -> line comment
                 // - Multi line, but both cursors have X at 0 -> multiple line comments
@@ -3311,61 +3306,64 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                     y0 := min(view.cursors.c0.y, view.cursors.c1.y);
                     y1 := max(view.cursors.c0.y, view.cursors.c1.y);
 
-                    comments_action: enum { UNINITIALIZED; ADD; REMOVE; };
-                    comments_add_at_level: s64;
-                    {
-                        // First line. Detect, whether we are adding or removing comments and do so for the first line.
-                        // All operations pass .NONE undo modifier.
-                        text_buffer_move_to(document.buffer, *view.cursors, 0, y0, false);
-                        text_buffer_move_to_start_of_line(document.buffer, *view.cursors, false, .START_OF_TEXT);
-
-                        line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
-                        line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
-
-                        if String.begins_with(line_view, line_comment_with_space) {
-                            comments_action = .REMOVE;
-                            text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
-                        } else if String.begins_with(line_view, line_comment) {
-                            comments_action = .REMOVE;
-                            text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
-                        } else  {
-                            comments_action = .ADD;
-                            comments_add_at_level = view.cursors.c0.x;
-                            text_buffer_insert(*document.buffer, *view.cursors, line_comment_with_space, .NONE);
-                        }
-                    }
-
-                    for y0 + 1..y1 {
-                        // Subsequent lines. Do what we did ont the first line, but don't remove a comment if there is none.
-                        // All operations pass .FUSE undo modifier.
-
+                    //
+                    // Detection pass
+                    //
+                    comments_add := false;
+                    comments_add_at_level: s64 = S64_MAX;
+                    for y0..y1 {
                         text_buffer_move_to(document.buffer, *view.cursors, 0, it, false);
                         text_buffer_move_to_start_of_line(document.buffer, *view.cursors, false, .START_OF_TEXT);
 
-                        if comments_action == .ADD {
-                            if comments_add_at_level < view.cursors.c0.x {
+                        line_end  := text_buffer_get_end_of_line(document.buffer, it);
+                        line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
+
+                        // We'll be adding comments, if any of the checked lines doesn't have them, but don't let whitespace-only lines
+                        // decrease the comment's indent.
+                        if !String.begins_with(line_view, line_comment) {
+                            comments_add = true;
+                            
+                            if !contains_only_whitespace(line_view) {
+                                comments_add_at_level = min(comments_add_at_level, view.cursors.c0.x);
+                            }
+                        }
+                    }
+                    
+                    if comments_add_at_level == S64_MAX {
+                        comments_add_at_level = 0;
+                    }
+
+                    // 
+                    // Mutation pass
+                    //
+                    for y0..y1 {
+                        undo_modifier: Undo_Modifier = ifx it == y0 then .NONE else .FUSE;
+                        
+                        text_buffer_move_to(document.buffer, *view.cursors, 0, it, false);
+                        text_buffer_move_to_start_of_line(document.buffer, *view.cursors, false, .START_OF_TEXT);
+
+                        if comments_add {
+                            if comments_add_at_level <= view.cursors.c0.x {
                                 text_buffer_move_to(document.buffer, *view.cursors, comments_add_at_level, it, false);
+                                text_buffer_insert(*document.buffer, *view.cursors, line_comment_with_space, undo_modifier);
                             } else if comments_add_at_level > view.cursors.c0.x {
                                 // We are before the comment level. If there is text on this line, tough luck.
                                 // However, if the line is just short, we can indent it.
-                                end := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
-                                if view.cursors.c0 == end {
-                                    // This should also move us to the right spot!
-                                    text_buffer_indent_line(*document.buffer, *view.cursors, comments_add_at_level, .FUSE);
+                                if view.cursors.c0 == text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y) {
+                                    text_buffer_indent_line(*document.buffer, *view.cursors, comments_add_at_level, undo_modifier);
+                                    text_buffer_insert(*document.buffer, *view.cursors, line_comment_with_space, .FUSE);
+                                } else {
+                                    text_buffer_insert(*document.buffer, *view.cursors, line_comment_with_space, undo_modifier);
                                 }
                             }
-
-                            text_buffer_insert(*document.buffer, *view.cursors, line_comment_with_space, .FUSE);
-                        } else if comments_action == .REMOVE {
+                        } else {
                             line_end  := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
                             line_view := text_buffer_make_view_for_interval(document.buffer, view.cursors.c0, line_end,, temp);
 
                             if String.begins_with(line_view, line_comment_with_space) {
-                                text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, .NONE);
-                                comments_action = .REMOVE;
+                                text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_with_space_length, undo_modifier);
                             } else if String.begins_with(line_view, line_comment) {
-                                text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, .NONE);
-                                comments_action = .REMOVE;
+                                text_buffer_delete_forward(*document.buffer, *view.cursors, line_comment_length, undo_modifier);
                             }
                         }
                     }

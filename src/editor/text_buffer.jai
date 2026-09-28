@@ -841,7 +841,7 @@ text_buffer_delete_line :: (buffer: *Text_Buffer, cursors: *Text_Cursors) -> str
     end_gb_index   := text_buffer_get_gap_buffer_index_for_location(buffer, line_end);
     delete_count   := end_gb_index - start_gb_index;
 
-    is_only_newline := false;
+    is_newline := false;
     if delete_count == 0 {
         line_end     = text_buffer_get_end_of_line(buffer, cursors.c0.y, include_newline = true);
         end_gb_index = text_buffer_get_gap_buffer_index_for_location(buffer, line_end);
@@ -854,7 +854,7 @@ text_buffer_delete_line :: (buffer: *Text_Buffer, cursors: *Text_Cursors) -> str
 
         sanity_assert(buffer.gb[start_gb_index] == "\n");
 
-        is_only_newline = true;
+        is_newline = true;
     }
 
     line_to_invalidate := cursors.c0.y;
@@ -869,15 +869,7 @@ text_buffer_delete_line :: (buffer: *Text_Buffer, cursors: *Text_Cursors) -> str
     // gap_buffer clamps, but we should have calculated the indices correctly in this case.
     sanity_assert(deleted_bytes.count == delete_count);
 
-    is_only_whitespace := true;
-    for deleted {
-        if !is_space(it) {
-            is_only_whitespace = false;
-            break;
-        }
-    }
-
-    if is_only_whitespace && !is_only_newline {
+    if contains_only_whitespace(deleted) && !is_newline {
         // Delete the newline also, if any. We do this by telling the gap buffer to delete
         // additional 1 or 2 bytes (depending CRLF or LF), and then modifying our deleted array. We
         // can do this, because we moved the gap before we started.
@@ -1579,8 +1571,6 @@ text_buffer_move_to_start_of_line :: (buffer: Text_Buffer, cursors: *Text_Cursor
 
     first_nonspace_index := -1;
     for line_view {
-        // We don't parse unicode here, because even if our whitespace is also a valid continuation
-        // byte, it would have to be preceeded by a nonwhitespace byte.
         if !is_space(it) {
             first_nonspace_index = it_index;
             break;
