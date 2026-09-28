@@ -1651,6 +1651,7 @@ text_buffer_move_forward_word :: (buffer: Text_Buffer, cursors: *Text_Cursors, s
 
     if can_move_vertically && !found && !inside_word {
         while true {
+            text_cursors_horizontal_move_was_explicit(cursors); // Because we call text_buffer_move_y.
             moved := text_buffer_move_y(buffer, cursors, 1, selecting);
             if !moved {
                 break;
@@ -1693,6 +1694,7 @@ text_buffer_move_backward_word :: (buffer: Text_Buffer, cursors: *Text_Cursors, 
 
     if can_move_vertically && !found && !inside_word {
         while true {
+            text_cursors_horizontal_move_was_explicit(cursors); // Because we call text_buffer_move_y.
             moved := text_buffer_move_y(buffer, cursors, -1, selecting);
             if !moved {
                 break;

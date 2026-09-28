@@ -3,11 +3,10 @@
 TODO(jt): Known critical bugs:
 
 - Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
+- Text buffer crash insert on Ondy's PDF. (See text_buffer.jai:2297)
 
 TODO(jt): Known serious bugs:
 
-- move_forward_word cycles on last line, if there are at least two words and a space after
-- Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
 - toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
 
 TODO(jt): Roadmap:

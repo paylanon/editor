@@ -31,6 +31,9 @@ Fixes:
   e.g. because we are horizontally scrolled and the clicked-on line is short.
 - Properly account for path parts when detecting project directories.
 - search_and_replace can now replace something with an empty string
+- move_forward_word/move_backward_word now correctly mark the horizontal move explicit before calling text_buffer_move_y
+  to prevent occasional bugs where text_buffer_move_y incorrectly reported that the cursor moved, causing the cursor to cycle
+  on the last line of the document.
 
 Other:
 
