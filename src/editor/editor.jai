@@ -8,7 +8,6 @@ TODO(jt): Known serious bugs:
 
 - move_forward_word cycles on last line, if there are at least two words and a space after
 - Text buffer crash insert from Ondy on the weird PDF. (See text_buffer.jai:2297)
-- search_and_replace doesn't replace if second (either?) string is empty.
 - toggle_comment should detect across all lines first, only then decide whether we are going to be adding or removing comments
 
 TODO(jt): Roadmap:
@@ -2926,7 +2925,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         }
 
         case .SEARCH_AND_REPLACE; {
-            document.flags &= .MODIFY_ATTEMPT_THIS_FRAME;
+            document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
             if !(document.flags & .READONLY) {
                 open_modal_interaction(editor, platform, input, modal_interaction_search_and_replace_procs);
             }
@@ -3442,12 +3441,12 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             if document.flags & .READONLY_BECAUSE_OF_MANUAL_LOCK {
                 document.flags &= ~.READONLY_BECAUSE_OF_MANUAL_LOCK;
                 if document.flags & .READONLY {
-                    editor_log(editor, "% is now unlocked; however, it is still read-only for other reasons.", document.backing_file_path);
+                    editor_log(editor, "% is now unlocked; however, it is still read-only for other reasons.", get_document_name(editor, document));
                 } else {
                     interpolation_start(*view.cursor_color,
                                         editor.theme.cursor_color_hot, editor.theme.cursor_color,
                                         input.time, CURSOR_FLASH_DURATION);
-                    editor_log(editor, "% is now unlocked", document.backing_file_path);
+                    editor_log(editor, "% is now unlocked", get_document_name(editor, document));
                 }
             } else {
                 document.flags |= .READONLY_BECAUSE_OF_MANUAL_LOCK;
@@ -3455,7 +3454,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                                     editor.theme.cursor_color_hot, editor.theme.cursor_color_readonly,
                                     input.time, CURSOR_FLASH_DURATION);
 
-                editor_log(editor, "% is now locked (read-only)", document.backing_file_path);
+                editor_log(editor, "% is now locked (read-only)", get_document_name(editor, document));
             }
         }
 
