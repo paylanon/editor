@@ -5,9 +5,9 @@ TODO(jt): Known critical bugs:
 - Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
 - Text buffer crash insert on Ondy's PDF. (See text_buffer.jai:2297)
 
-TODO(jt): Known serious bugs
+TODO(jt): Known serious bugs:
 
-- Recenter threshold is a little too benevolent, if we keep moving one line up/down and recentering, we only recenter sometimes.
+(none currently)
 
 TODO(jt): Roadmap:
 
@@ -5687,7 +5687,7 @@ recenter_panel :: (panel: *Panel, editor: Editor, input: Input, force_center := 
     target: DVector2;
     target.x = panel.scroll.target.x;
 
-    epsilon := editor.font.line_height_in_pixels;
+    epsilon := 0.1 * editor.font.line_height_in_pixels;
 
     if force_center {
         target.y = center;

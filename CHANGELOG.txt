@@ -3,8 +3,7 @@
 
 New features:
 
-- Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection,
-  triple-click expand_selection_to_line. Behavior of expand_selection still needs to be improved.
+- Add expand_selection and expand_selection_to_line commands. Double-click runs expand_selection, triple-click expand_selection_to_line.
 - Directory lister now selects on click, and opens on double-click.
 - search_and_replace still respects cursor position, but now allows to navigate above the original cursor afterwards.
 
@@ -35,6 +34,7 @@ Fixes:
   to prevent occasional bugs where text_buffer_move_y incorrectly reported that the cursor moved, causing the cursor to cycle
   on the last line of the document.
 - toggle_comment now detects its action and indentation better, and should mostly do what you mean.
+- Fix benevolent floating point epsilon in recenter, causing it to not recenter panels in some cases.
 
 Other:
 
