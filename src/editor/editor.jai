@@ -5,6 +5,10 @@ TODO(jt): Known critical bugs:
 - Infinite loop when clicking into a(?) buffer. Happened once with *scratch* Related to expand_selection or maybe counting font positions?
 - Text buffer crash insert on Ondy's PDF. (See text_buffer.jai:2297)
 
+TODO(jt): Known serious bugs
+
+- Recenter threshold is a little too benevolent, if we keep moving one line up/down and recentering, we only recenter sometimes.
+
 TODO(jt): Roadmap:
 
 - [X] Display text on screen
@@ -2083,8 +2087,8 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
         case .MOVE_TO_START;           mp.item_index = 0; // Not -1, even if the particular procs support it.
         case .MOVE_TO_END;             mp.item_index = max(mp.items.count - 1, 0);
 
-        case .MOVE_FORWARD_WORD;       text_buffer_move_forward_word(mp.buffer, *mp.cursors, mp.selecting);
-        case .MOVE_BACKWARD_WORD;      text_buffer_move_backward_word(mp.buffer, *mp.cursors, mp.selecting);
+        case .MOVE_FORWARD_WORD;       text_buffer_move_forward_within(mp.buffer, *mp.cursors, mp.selecting, is_alnum32);
+        case .MOVE_BACKWARD_WORD;      text_buffer_move_backward_within(mp.buffer, *mp.cursors, mp.selecting, is_alnum32);
 
         case .MOVE_UP_ONE_SCREEN;      mp.item_index = clamp(mp.item_index - MINI_PANEL_LINES, min_item_index, mp.items.count - 1);
         case .MOVE_DOWN_ONE_SCREEN;    mp.item_index = clamp(mp.item_index + MINI_PANEL_LINES, min_item_index, mp.items.count - 1);
@@ -2092,14 +2096,14 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
         case .DELETE_FORWARD;          text_buffer_delete_forward(*mp.buffer, *mp.cursors, 1); buffer_changed = true;
         case .DELETE_BACKWARD;         buffer_changed |= mp.procs.delete_backward(editor, platform, input);
         case .DELETE_FORWARD_WORD; {
-            deleted := text_buffer_delete_forward_word(*mp.buffer, *mp.cursors);
+            deleted := text_buffer_delete_forward_within(*mp.buffer, *mp.cursors, is_alnum32);
             if deleted.count {
                 buffer_changed = true;
                 platform.set_clipboard_text(deleted);
             }
         }
         case .DELETE_BACKWARD_WORD; {
-            deleted := text_buffer_delete_backward_word(*mp.buffer, *mp.cursors);
+            deleted := text_buffer_delete_backward_within(*mp.buffer, *mp.cursors, is_alnum32);
             if deleted.count {
                 buffer_changed = true;
                 platform.set_clipboard_text(deleted);
@@ -2186,20 +2190,20 @@ route_event_to_modal_interaction :: (editor: *Editor, event: Input_Event, platfo
         case .MOVE_TO_START_OF_LINE;   text_buffer_move_to_start_of_line(mi.buffer, *mi.cursors, mi.selecting);
         case .MOVE_TO_END_OF_LINE;     text_buffer_move_to_end_of_line(mi.buffer, *mi.cursors, mi.selecting);
 
-        case .MOVE_FORWARD_WORD;       text_buffer_move_forward_word(mi.buffer, *mi.cursors, mi.selecting);
-        case .MOVE_BACKWARD_WORD;      text_buffer_move_backward_word(mi.buffer, *mi.cursors, mi.selecting);
+        case .MOVE_FORWARD_WORD;       text_buffer_move_forward_within(mi.buffer, *mi.cursors, mi.selecting, is_alnum32);
+        case .MOVE_BACKWARD_WORD;      text_buffer_move_backward_within(mi.buffer, *mi.cursors, mi.selecting, is_alnum32);
 
         case .DELETE_FORWARD;          text_buffer_delete_forward(*mi.buffer, *mi.cursors, 1); buffer_changed = true;
         case .DELETE_BACKWARD;         text_buffer_delete_backward(*mi.buffer, *mi.cursors); buffer_changed = true;
         case .DELETE_FORWARD_WORD; {
-            deleted := text_buffer_delete_forward_word(*mi.buffer, *mi.cursors);
+            deleted := text_buffer_delete_forward_within(*mi.buffer, *mi.cursors, is_alnum32);
             if deleted.count {
                 buffer_changed = true;
                 platform.set_clipboard_text(deleted);
             }
         }
         case .DELETE_BACKWARD_WORD; {
-            deleted := text_buffer_delete_backward_word(*mi.buffer, *mi.cursors);
+            deleted := text_buffer_delete_backward_within(*mi.buffer, *mi.cursors, is_alnum32);
             if deleted.count {
                 buffer_changed = true;
                 platform.set_clipboard_text(deleted);
@@ -2874,13 +2878,13 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         case .MOVE_TO_END;            cursor_moved |= text_buffer_move_to_end(document.buffer, *view.cursors, view.selecting);
 
         case .MOVE_FORWARD_WORD; {
-            cursor_moved=, cursor_y_moved := text_buffer_move_forward_word(document.buffer, *view.cursors, view.selecting);
+            cursor_moved=, cursor_y_moved := text_buffer_move_forward_within(document.buffer, *view.cursors, view.selecting, is_alnum32);
             if cursor_y_moved {
                 view.flags |= .CLAMP_SCROLL_TO_START_OF_LINE;
             }
         }
         case .MOVE_BACKWARD_WORD; {
-            cursor_moved=, cursor_y_moved := text_buffer_move_backward_word(document.buffer, *view.cursors, view.selecting);
+            cursor_moved=, cursor_y_moved := text_buffer_move_backward_within(document.buffer, *view.cursors, view.selecting, is_alnum32);
             if cursor_y_moved {
                 view.flags |= .CLAMP_SCROLL_TO_END_OF_LINE;
             }
@@ -3141,7 +3145,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         case .DELETE_FORWARD_WORD; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
             if !(document.flags & .READONLY) {
-                deleted := text_buffer_delete_forward_word(*document.buffer, *view.cursors);
+                deleted := text_buffer_delete_forward_within(*document.buffer, *view.cursors, is_alnum32);
                 if deleted.count {
                     buffer_changed = true;
                     platform.set_clipboard_text(deleted);
@@ -3151,7 +3155,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         case .DELETE_BACKWARD_WORD; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
             if !(document.flags & .READONLY) {
-                deleted := text_buffer_delete_backward_word(*document.buffer, *view.cursors);
+                deleted := text_buffer_delete_backward_within(*document.buffer, *view.cursors, is_alnum32);
                 if deleted.count {
                     buffer_changed = true;
                     platform.set_clipboard_text(deleted);
@@ -3571,13 +3575,13 @@ execute_compilation_action :: (editor: *Editor, platform: Platform, input: Input
         case .MOVE_TO_END;                  cursor_moved |= text_buffer_move_to_end(document.buffer, *view.cursors, view.selecting);
 
         case .MOVE_FORWARD_WORD; {
-            cursor_moved=, cursor_y_moved := text_buffer_move_forward_word(document.buffer, *view.cursors, view.selecting);
+            cursor_moved=, cursor_y_moved := text_buffer_move_forward_within(document.buffer, *view.cursors, view.selecting, is_alnum32);
             if cursor_y_moved {
                 view.flags |= .CLAMP_SCROLL_TO_START_OF_LINE;
             }
         }
         case .MOVE_BACKWARD_WORD; {
-            cursor_moved=, cursor_y_moved := text_buffer_move_backward_word(document.buffer, *view.cursors, view.selecting);
+            cursor_moved=, cursor_y_moved := text_buffer_move_backward_within(document.buffer, *view.cursors, view.selecting, is_alnum32);
             if cursor_y_moved {
                 view.flags |= .CLAMP_SCROLL_TO_END_OF_LINE;
             }

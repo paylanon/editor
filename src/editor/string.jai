@@ -62,7 +62,7 @@ contains_only_whitespace :: (s: string) -> bool {
             break;
         }
     }
-    
+
     return only_whitespace;
 }
 
@@ -71,8 +71,8 @@ contains_only_whitespace :: (s: string) -> bool {
 // (verified in beta 0.2.030), producing additional basic blocks and machine code. Real-world performance suffers.
 slice :: inline (s: string, index: s64) -> string {
     sanity_assert(index >= 0, "index = %", index);
-    if index < 0         index = 0;       
-    
+    if index < 0         index = 0;
+
     if index >= s.count  return "";
 
     c: string = ---;
@@ -191,6 +191,22 @@ is_hex :: inline (b: u8) -> bool {
     return is_digit(b) || b >= "a" && b <= "f" || b >= "A" && b <= "F";
 }
 
+is_alnum32 :: inline (c: u32) -> bool {
+    return c >= #char "0" && c <= #char "9" || c >= #char "A" && c <= #char "Z" || c >= #char "a" && c <= #char "z";
+}
+
+is_punct32 :: inline (c: u32) -> bool {
+    return c >= #char "!" && c <= #char "/" || c >= #char ":" && c <= #char "@" || c >= #char "[" && c <= #char "`" || c >= #char "{" && c <= #char "~";
+}
+
+is_nonnewline_space32 :: inline (c: u32) -> bool {
+    return c == #char "\t" || c == #char " ";
+}
+
+is_newline32 :: inline (c: u32) -> bool {
+    return c == #char "\r" || c == #char "\n";
+}
+
 // This is just a wrapper around the regular string iterator, in case you need to refer to it by name.
 string_bytes_iter :: (s: *string, body: Code, flags: For_Flags) #expand {
     #assert !(flags & .POINTER) "Iteration by pointer is not supported yet";
@@ -246,7 +262,7 @@ path_trailing_parts :: (path: string, n: s64) -> string, count: s64 {
 path_begins_with :: (_path: string, _prefix: string) -> bool {
     path   := _path;
     prefix := _prefix;
-    
+
     while path.count && prefix.count {
         path_part_count   := String.find_index_from_left(path, #char "/");
         prefix_part_count := String.find_index_from_left(prefix, #char "/");
@@ -261,18 +277,18 @@ path_begins_with :: (_path: string, _prefix: string) -> bool {
             prefix_part_count = prefix.count;
             prefix_advance    = prefix.count;
         }
-        
+
         path_part   := String.slice(path, 0, path_part_count);
         prefix_part := String.slice(prefix, 0, prefix_part_count);
-        
+
         if path_part != prefix_part {
             return false;
         }
-        
+
         advance(*path, path_advance);
         advance(*prefix, prefix_advance);
     }
-    
+
     return prefix.count == 0;
 }
 
