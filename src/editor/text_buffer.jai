@@ -1989,7 +1989,7 @@ text_buffer_get_gap_buffer_index_for_location :: (buffer: Text_Buffer, loc: Text
         // This is a UTF8 line. We have to count.
         for 0..loc.x - 1 {
             first_byte := buffer.gb[index];
-            index += UTF8_LENGTH_FOR_STARTING_BYTE[first_byte];
+            index += UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED[first_byte];
         }
     }
 
@@ -2296,68 +2296,12 @@ update_index_for_insert :: (buffer: *Text_Buffer, cursors: *Text_Cursors, _text:
                 continue;
             }
 
-            codepoint_advance := UTF8_LENGTH_FOR_STARTING_BYTE[text[0]];
-
-            {
-                // TODO(jt): Do Proper RFC-compliant utf8 validation. We also need to make it fast.
-                //
-                // if !validate_utf8_codepoint(s) {
-                //     text_buffer_switch_to_binary_mode(buffer);
-                //     return;
-                // }
-
-                // Must be first, because the rest doesn't check for OOB.
-                if codepoint_advance > text.count {
-                    text_buffer_switch_to_binary_mode(buffer, cursors);
-                    return;
-                }
-
-                {
-                    zero_found := false;
-                    for 0..codepoint_advance - 1 {
-                        zero_found |= text[it] == 0;
-                    }
-
-                    if zero_found {
-                        text_buffer_switch_to_binary_mode(buffer, cursors);
-                        return;
-                    }
-                }
-
-                if !is_utf8_char_boundary(text[0]) {
-                    text_buffer_switch_to_binary_mode(buffer, cursors);
-                    return;
-                }
-
-                /* TODO(jt): @Bug We got a crash from a pre-0.0.1 version here. Unfortunately we can't have the file.
-                It looks like find_next_utf8_boundary crashes on something our previous checks omitted?
-                (line info is incrrect in string.jai, unfortunately)
-
-                C:/Users/yanchith/workspace/editor/src/editor/string.jai:88,5: Assertion failed!
-
-                Stack trace:
-                'assertion_failed' at C:/Users/yanchith/workspace/editor/src/logger.jai:74
-                'assert_helper' at C:/Users/yanchith/workspace/jai/modules/Basic/module.jai:86
-                'find_next_utf8_char_boundary' at C:/Users/yanchith/workspace/editor/src/editor/string.jai:88
-                'update_index_for_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:2252
-                'text_buffer_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:330
-                'text_buffer_insert' at C:/Users/yanchith/workspace/editor/src/editor/text_buffer.jai:265
-                'open_file' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:4946
-                'confirm' at C:/Users/yanchith/workspace/editor/src/editor/mini_panel_open_file.jai:260
-                'route_event_to_mini_panel' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:2111
-                'update_and_render' at C:/Users/yanchith/workspace/editor/src/editor/editor.jai:917
-                'main' at C:/Users/yanchith/workspace/editor/src/main.jai:807
-
-                */
-
-                _, codepoint_advance_check := find_next_utf8_char_boundary(text, 0, sanity = false);
-                if codepoint_advance != codepoint_advance_check {
-                    text_buffer_switch_to_binary_mode(buffer, cursors);
-                    return;
-                }
+            // TODO(jt): @Speed if we are doing this from undo, we could get the advance from the table and skip the validation.
+            valid, codepoint_advance := validate_utf8(text);
+            if !valid {
+                text_buffer_switch_to_binary_mode(buffer, cursors);
+                return;
             }
-
-            assert(!buffer.binary_mode);
 
             advance(*text, codepoint_advance);
 
@@ -2656,7 +2600,7 @@ maybe_fuse_last_edits :: (edits: [] Edit, is_autofuse := false) {
 
 is_simple_edit :: (text: string) -> bool {
     if text != " " && text != "\n" && text != "\r\n" {
-        if text.count && text.count == UTF8_LENGTH_FOR_STARTING_BYTE[text[0]] {
+        if text.count && text.count == UTF8_LENGTH_FOR_STARTING_BYTE_CLAMPED[text[0]] {
             return true;
         }
     }
