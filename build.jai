@@ -8,15 +8,20 @@ jai -optimized_debug build.jai
 Making a release:
 
 0) Set version number in this file
+1) Make sure changelog is up to date
+2) Push tags to version control
 
 (Windows)
 
-1) jai -optimized_debug build.jai - -bundle -no-sanity -no-windows-console
-2) Zip build/editor
+3) jai -optimized_debug build.jai - -bundle -no-sanity -no-windows-console
+4) Zip dist/editor-MAJOR-MINOR-PATCH
+5) Upload archive
 
 (macOS)
 
-1) jai -optimized_debug build.jai - -bundle -no-sanity
+3) jai -optimized_debug build.jai - -bundle -no-sanity
+
+TODO(jt): Finish macOS bundle stuff. Including adding a readme section on dequarantine.
 
 (Linux coming soonish)
 
