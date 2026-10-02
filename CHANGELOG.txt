@@ -1,6 +1,14 @@
 (unreleased)
 ------------
 
+New features:
+
+- MacOS .app bundle is now distributed.
+
+Other:
+
+- expand_selection now has special treatment for underscores, making it easier to expand selection to identifiers.
+
 alpha 0.0.2
 -----------
 

@@ -1855,32 +1855,24 @@ text_buffer_expand_selection :: (buffer: Text_Buffer, cursors: *Text_Cursors) ->
 
     text_location_sort(*cursors.c0, *cursors.c1);
 
-    // Grow selection somewhat systematically: alphanumeric -> punctuation -> indentation -> newlines.
+    // Grow selection somewhat systematically: alphanumeric -> underscore -> punctuation -> indentation -> newlines.
     // This is not as nice as growing based on the parse tree, but behaves okay for most programming language text.
 
     backward := text_buffer_move_backward_within(buffer, cursors, true, is_alnum32, must_start_inside = true);
     swap(*cursors.c0, *cursors.c1);
     forward := text_buffer_move_forward_within(buffer, cursors, true, is_alnum32, must_start_inside = true);
-
-    if !backward && !forward {
-        forward = text_buffer_move_forward_within(buffer, cursors, true, is_punct32, must_start_inside = true);
-        swap(*cursors.c0, *cursors.c1);
-        backward = text_buffer_move_backward_within(buffer, cursors, true, is_punct32, must_start_inside = true);
-
-        if !forward && !backward {
-            backward = text_buffer_move_backward_within(buffer, cursors, true, is_nonnewline_space32, must_start_inside = true);
-            swap(*cursors.c0, *cursors.c1);
-            forward = text_buffer_move_forward_within(buffer, cursors, true, is_nonnewline_space32, must_start_inside = true);
-
-            if !forward && !backward {
-                forward = text_buffer_move_forward_within(buffer, cursors, true, is_newline32, must_start_inside = true);
-                swap(*cursors.c0, *cursors.c1);
-                backward = text_buffer_move_backward_within(buffer, cursors, true, is_newline32, must_start_inside = true);
-                swap(*cursors.c0, *cursors.c1);
-            }
-        } else {
-            swap(*cursors.c0, *cursors.c1);
+    
+    Matcher :: #type (c: u32) -> bool;
+    
+    for Matcher.[(c: u32) -> bool { return c == #char "_"; }, is_punct32, is_nonnewline_space32, is_newline32] {
+        if backward || forward {
+            break;
         }
+
+        swap(*cursors.c0, *cursors.c1);
+        backward = text_buffer_move_backward_within(buffer, cursors, true, it, must_start_inside = true);
+        swap(*cursors.c0, *cursors.c1);
+        forward = text_buffer_move_forward_within(buffer, cursors, true, it, must_start_inside = true);
     }
 
     text_cursors_horizontal_move_was_explicit(cursors);
