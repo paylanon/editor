@@ -176,8 +176,8 @@ build :: () {
     compiler_end_intercept(w);
 
     if !compilation_failed && do_bundle {
-        // TODO(jt): Make all bundles copy to a dist directory. macOS currently goes to root,
-        // and Windows to build (which interferes with regular dev process).
+        // TODO(jt): Make macOS bundle copy to the dist directory (currently goes to root).
+        make_directory_if_it_does_not_exist("dist");
         #if OS == .WINDOWS {
             make_windows_bundle(options);
         } else #if OS == .MACOS {
@@ -237,17 +237,19 @@ DONE;
 
         log("\nMaking windows bundle");
 
-        bundle_path := tprint("%/editor", options.output_path);
-
-        exe_name := tprint("%.exe", options.output_executable_name);
-        exe_path := tprint("%/%.exe", options.output_path, options.output_executable_name);
-
+        output_path     := options.output_path;
+        executable_name := options.output_executable_name;
+        
+        bundle_path := tprint("dist/editor-%.%.%", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+        
+        delete_directory(bundle_path);
         make_directory_if_it_does_not_exist(bundle_path);
 
         ok := true;
         for Copy.[
-            { .file, exe_path,                tprint("%/%", bundle_path, exe_name) },
-            { .dir,  "data",                  tprint("%/data", bundle_path) },
+            { .file, tprint("%/%.exe", output_path, executable_name),  tprint("%/%.exe", bundle_path, executable_name) },
+            { .file, tprint("%/%.pdb", output_path, executable_name),  tprint("%/%.pdb", bundle_path, executable_name) },
+            { .dir,  "data",                                           tprint("%/data", bundle_path) },
         ] {
             log("Copying % % -> %", it.kind, it.source, it.dest);
 
@@ -264,9 +266,9 @@ DONE;
         }
 
         if ok {
-            log("\nBundle done");
+            log("Bundle done");
         } else {
-            log("\nBundle error");
+            log("Bundle error");
         }
     }
 }
