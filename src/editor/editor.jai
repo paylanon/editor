@@ -281,8 +281,8 @@ Editor :: struct {
 
     project_directories: [..] string;
 
-    // This is a simple hardcoded version of the view tree. We can replace it with fully K-d tree
-    // layout out in an array, once we do arbitrary panel splitting.
+    // This is a simple hardcoded version of the view tree. We can replace it with full K-d tree
+    // layout in an array, once we do arbitrary panel splitting.
     active_view: enum u8 {
         FULL;   // The screen is not split into multiple views.
         LEFT;   // The screen is split horizontally, and the left view is active.
@@ -6051,14 +6051,17 @@ operator== :: (a: Bucket_Locator, b: Bucket_Locator) -> bool {
 
 WELCOME :: #run -> string {
     #if OS == .WINDOWS {
-        CONFIG_TEMPLATE_LOCATION :: "next to the executable";
+        LOG_LOCATION    :: "next to the executable";
+        CONFIG_LOCATION :: "next to the executable";
     } else #if OS == .MACOS {
-        CONFIG_TEMPLATE_LOCATION :: "in ~/Library/Application Support/Editor";
+        LOG_LOCATION    :: "in ~/Library/Logs/Editor";
+        CONFIG_LOCATION :: "in ~/Library/Application Support/Editor";
     } else {
-        CONFIG_TEMPLATE_LOCATION :: "";
+        LOG_LOCATION    :: "in <unknown>";
+        CONFIG_LOCATION :: "in <unknown>";
     }
 
-    return sprint(WELCOME_TEMPLATE, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP, CONFIG_TEMPLATE_LOCATION);
+    return sprint(WELCOME_TEMPLATE, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP, LOG_LOCATION, CONFIG_LOCATION);
 }
 
 WELCOME_TEMPLATE :: #string DONE
@@ -6066,6 +6069,7 @@ WELCOME_TEMPLATE :: #string DONE
 Welcome to the untitled text editor! (Version %.%.%, built on %)
 
 This is an alpha release, so expect minor bugs. I apologize for the inconvenience.
+If you experience a crash, you can find logs %.
 
 If you are coming from Emacs, most of the keyboard shortcuts will be familiar to you.
 Otherwise, there are starter templates for the config files from other editors.

@@ -256,10 +256,18 @@ main :: () {
             resources_dir := String.path_join(app_dir, "Resources"); // :Malloc
 
             if File_Utilities.is_directory(resources_dir) {
-                // Running from an app bundle. Adjust data path.
+                // Running from an app bundle. Adjust paths.
                 data_path   = resources_dir;
-                log_path    = "~/Library/Logs/Editor";
-                config_path = "~/Library/Application Support/Editor";
+                
+                HOME :: "HOME";
+                home_dir := to_string(getenv(HOME),, temp);
+            
+                log_path    = sprint("%/Library/Logs/Editor", home_dir);                // :Malloc
+                config_path = sprint("%/Library/Application Support/Editor", home_dir); // :Malloc
+                
+                // Since we just set all paths to something absolute, we might as well set our working directory
+                // to home, so file search starts on a friendlier path.
+                set_working_directory(home_dir);
             } else {
                 // Running from a raw executable.
                 // Hopefully we will find our resources in our new working directory.
