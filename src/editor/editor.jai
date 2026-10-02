@@ -3325,23 +3325,23 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                         // decrease the comment's indent.
                         if !String.begins_with(line_view, line_comment) {
                             comments_add = true;
-                            
+
                             if !contains_only_whitespace(line_view) {
                                 comments_add_at_level = min(comments_add_at_level, view.cursors.c0.x);
                             }
                         }
                     }
-                    
+
                     if comments_add_at_level == S64_MAX {
                         comments_add_at_level = 0;
                     }
 
-                    // 
+                    //
                     // Mutation pass
                     //
                     for y0..y1 {
                         undo_modifier: Undo_Modifier = ifx it == y0 then .NONE else .FUSE;
-                        
+
                         text_buffer_move_to(document.buffer, *view.cursors, 0, it, false);
                         text_buffer_move_to_start_of_line(document.buffer, *view.cursors, false, .START_OF_TEXT);
 
@@ -4691,7 +4691,7 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
 
                 cursor  := view.cursors.c0;
-                
+
                 percent := 100;
                 if document.buffer.line_count > 1 {
                     percent = cast(s64, 100.0 * cast(f32, cursor.y) / cast(f32, document.buffer.line_count - 1));
@@ -4791,7 +4791,7 @@ draw_panel :: (editor: *Editor, input: Input, render_commands: *[..] Render_Comm
                 draw_rect(render_commands, modeline_rect, ifx panel_is_active then editor.theme.modeline_color_active else editor.theme.modeline_color);
 
                 item_index := view.item_index;
-                
+
                 percent := 100;
                 if listing.items.count > 1 {
                     percent = cast(s64, 100.0 * cast(f32, item_index) / cast(f32, listing.items.count - 1));
@@ -4943,7 +4943,7 @@ load_config :: (editor: *Editor, platform: Platform, input: Input, fall_back_to_
 
     success, config := platform.read_file(config_path,, temp);
     if success {
-        success = parse_and_apply_config(editor, cast(string, config));
+        success = parse_and_apply_config(editor, platform, cast(string, config));
         if success {
             editor_log(editor, "Applied config");
         } else if fall_back_to_emergency_config {
@@ -6011,7 +6011,7 @@ run_debug_benchmark :: (editor: *Editor, platform: Platform, bench_iteration: Co
     bench_runs  := 0;
     while 1 {
         auto_release_temp();
-        
+
         start := platform.get_current_time_monotonic();
         #insert bench_iteration;
         end   := platform.get_current_time_monotonic();

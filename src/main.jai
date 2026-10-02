@@ -257,14 +257,13 @@ main :: () {
 
             if File_Utilities.is_directory(resources_dir) {
                 // Running from an app bundle. Adjust paths.
-                data_path   = resources_dir;
-                
                 HOME :: "HOME";
                 home_dir := to_string(getenv(HOME),, temp);
-            
+
+                data_path   = resources_dir;
                 log_path    = sprint("%/Library/Logs/Editor", home_dir);                // :Malloc
                 config_path = sprint("%/Library/Application Support/Editor", home_dir); // :Malloc
-                
+
                 // Since we just set all paths to something absolute, we might as well set our working directory
                 // to home, so file search starts on a friendlier path.
                 set_working_directory(home_dir);
@@ -406,6 +405,22 @@ main :: () {
         return current_time_monotonic();
     }
 
+    platform.add_search_path = (path_to_add: string) {
+        // TODO(jt): @Incomplete We should probably also do this for windows, but we don't need this on Windows yet.
+        #if OS == .MACOS {
+            search_path := to_string(getenv("PATH"),, temp);
+            new_search_path := tprint("%:%", search_path, path_to_add);
+            
+            setenv("PATH", to_c_string(new_search_path,, temp), 1);
+        }
+    }
+    platform.clear_search_path = () {
+        // TODO(jt): @Incomplete We should probably also do this for windows, but we don't need this on Windows yet.
+        #if OS == .MACOS {
+            unsetenv("PATH");
+        }
+    }
+    
     platform.run_in_process = (_args: string, working_directory: string) -> exit_code: s32, exit_type: Editor.Exit_Type, output: string, error: string {
         args := _args;
         #if OS == .WINDOWS {
