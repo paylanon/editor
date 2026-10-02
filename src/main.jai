@@ -157,7 +157,6 @@ main                              C:\Users\yanchith\workspace\editor\src\main.ja
 #import "Basic"()(MEMORY_DEBUGGER = DEBUG_MEMORY);
 #import "Sort";
 #import "Hash_Table";
-#import "Thread";
 #import "GL";
 #import "Profiler"()(IMPORT_MODE = .RUNTIME);
 
@@ -178,7 +177,7 @@ IRect   :: Editor.IRect;
 
 // TODO(jt): Simp/OpenGL works everywhere, but Simp is a little too big and OpenGL drivers a little too buggy.
 // Also it would be good if we could control the latency a little. Do our own backends?
-// Vulkan on Windows and Linue, and Metal on macOS? We could even try Aaltonen's NoGraphicsAPI.
+// Vulkan on Windows and Linux, and Metal on macOS? We could even try Aaltonen's NoGraphicsAPI.
 #load "renderer_simp.jai";
 #load "logger.jai";
 
@@ -291,7 +290,9 @@ main :: () {
 
     log("Editor version %.%.%, built on %.", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, BUILD_TIMESTAMP);
 
-    // Seed config files from data path.
+    //
+    // Seed config files
+    //
     {
         File.make_directory_if_it_does_not_exist(config_path);
 
@@ -308,49 +309,42 @@ main :: () {
         }
     }
 
-    // Clean up old log files. Keep MAX_LOGFILES recent files.
-    {
-        // TODO(jt): @Incomplete We can't do this for macOS .app, where the logs will not be stored next to the executable.
-        thread_proc :: (thread: *Thread) -> s64 {
-            if File_Utilities.is_directory("./logs") {
-                files: [..] string;
-                files.allocator = temp;
+    //
+    // Clean up old logs
+    //
+    // (This costs a little bit of startup time. If we have more cleanup tasks in the future, we could put them on a thread)
+    //
+    if File_Utilities.is_directory(log_path) {
+        files: [..] string;
+        files.allocator = temp;
 
-                visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] string) {
-                    if String.begins_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
-                        array_add(userdata, visit_info.full_name);
-                    }
-                }
+        visitor :: (visit_info: *File_Utilities.File_Visit_Info, userdata: *[..] string) {
+            if String.begins_with(visit_info.short_name, "editor_") && String.ends_with(visit_info.short_name, ".log") {
+                array_add(userdata, visit_info.full_name);
+            }
+        }
 
-                File_Utilities.visit_files("./logs", false, *files, visitor,
-                                           visit_files = true,
-                                           visit_directories = false,
-                                           visit_symlinks = false,
-                                           follow_directory_symlinks = false);
+        File_Utilities.visit_files(log_path, false, *files, visitor,
+                                   visit_files = true,
+                                   visit_directories = false,
+                                   visit_symlinks = false,
+                                   follow_directory_symlinks = false);
 
 
-                if files.count > MAX_LOGFILES {
-                    files_to_delete_count := files.count - MAX_LOGFILES;
-                    quick_sort(files, compare_strings);
+        if files.count > MAX_LOGFILES {
+            files_to_delete_count := files.count - MAX_LOGFILES;
+            quick_sort(files, compare_strings);
 
-                    files_to_delete := array_view(files, 0, files_to_delete_count);
+            files_to_delete := array_view(files, 0, files_to_delete_count);
 
-                    log("Cleaning % old log(s)", files_to_delete_count);
-                    for files_to_delete {
-                        log("Deleting log: %", it);
-                        File.file_delete(it);
-                    }
-
-                    log("Done deleting % old log(s)", files_to_delete_count);
-                }
+            log("Cleaning % old log(s)", files_to_delete_count);
+            for files_to_delete {
+                log("Deleting log: %", it);
+                File.file_delete(it);
             }
 
-            return 0;
-        };
-
-        thread: Thread;
-        thread_init(*thread, thread_proc, name = "Log Cleanup");
-        thread_start(*thread);
+            log("Deleted % old log(s)", files_to_delete_count);
+        }
     }
 
     window := Window.create_window(1920, 1200, "editor");

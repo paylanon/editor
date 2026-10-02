@@ -284,10 +284,10 @@ DONE;
     make_macos_bundle :: (options: Build_Options) {
         log("\nMaking macOS bundle");
 
-        exe_path := tprint("%/%", options.output_path, options.output_executable_name, );
+        exe_path := tprint("%/%", options.output_path, options.output_executable_name);
 
         create_app_bundle("Editor", exe_path, "data/icon.ico", "data", only_copy_subdirectories_and_files = true, write_plist = true);
-        log("\nBundle done");
+        log("Bundle done");
     }
 }
 
