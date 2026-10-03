@@ -410,7 +410,7 @@ main :: () {
         #if OS == .MACOS {
             search_path := to_string(getenv("PATH"),, temp);
             new_search_path := tprint("%:%", search_path, path_to_add);
-            
+
             setenv("PATH", to_c_string(new_search_path,, temp), 1);
         }
     }
@@ -420,7 +420,7 @@ main :: () {
             unsetenv("PATH");
         }
     }
-    
+
     platform.run_in_process = (_args: string, working_directory: string) -> exit_code: s32, exit_type: Editor.Exit_Type, output: string, error: string {
         args := _args;
         #if OS == .WINDOWS {
@@ -840,12 +840,13 @@ main :: () {
                         case .MOUSE_BUTTON_MIDDLE;  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.MB_MIDDLE) });
 
                         case; {
-                            // TODO(jt): @Cleanup @Hack On Windows, holding down control suppresses the text event,
-                            // so we emit it here. This is a temporary hack. We should eventually rewrite the
-                            // platform layers and do the minimal necessary hacks there.
-
-                            if it.ctrl_pressed && it.text_input_count == 0 {
-                                array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, it.key_code) });
+                            #if OS == .WINDOWS {
+                                // TODO(jt): @Cleanup @Hack On Windows, holding down control suppresses the text event
+                                // (unless it is SPACEBAR!), so we emit it here. This is a temporary hack.
+                                // We should eventually rewrite the platform layers and do the minimal necessary hacks there.
+                                if it.ctrl_pressed && it.text_input_count == 0 && it.key_code != .SPACEBAR {
+                                    array_add(*input_events, { .CODEPOINT, flags, modifiers, cast(u32, it.key_code) });
+                                }
                             }
                         }
                     }

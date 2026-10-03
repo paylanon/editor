@@ -3,7 +3,9 @@
 
 New features:
 
-- MacOS .app bundle is now distributed.
+- MacOS .app bundle is now distributed. You still need to dequarantine it manually.
+- Cursor undo: C-u C-<space>. Actions start_selecting and confirming search in minipanel
+  add previous cursor positions to the undo ring. You can then pop_cursor_location.
 
 Other:
 

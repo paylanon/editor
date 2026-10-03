@@ -75,7 +75,7 @@ TODO(jt): Roadmap:
 - [X] Triple click to select line. (expand to line)
 - [X] Speed improvements to scope parsing
 - [X] Speed improvements to lexing for syntax highlighting
-- [ ] C-u C-<space> (cursor undo)
+- [X] C-u C-<space> (cursor undo)
 - [ ] M-q (reflow)
 - [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] q to hide compilation or listing
@@ -458,8 +458,12 @@ Document :: struct {
     time_of_last_activation: Apollo_Time;
     time_of_last_simple_edit: Apollo_Time; // Insert by typing characters or delete forward/backward.
 
-    cursors_cold: Text_Cursors; // Used to restore cursors in panel view, if the document was in the background. Otherwise, the view's cursors take precedence.
     buffer: Text_Buffer;
+    cursors_cold: Text_Cursors; // Used to restore cursors in panel view, if the document was in the background. Otherwise, the view's cursors take precedence.
+    
+    CURSOR_RING_COUNT :: 16;
+    cursor_ring: [CURSOR_RING_COUNT] Text_Location;
+    cursor_ring_index: s64;
 
     arena: *Arena; // For scopes, tokens, compilation_args, compilation_errors, backing_file_directory, backing_file_path...
 
@@ -2366,6 +2370,9 @@ Document_Action :: enum {
     INDENT_OR_AUTOCOMPLETE;
 
     TOGGLE_COMMENT;
+    
+    PUSH_CURSOR_LOCATION;
+    POP_CURSOR_LOCATION;
 
     UNDO_EDIT;
     REDO_EDIT;
@@ -2529,6 +2536,7 @@ route_event_to_panel :: (editor: *Editor, event: Input_Event, platform: Platform
 
     if did_execute_action {
         key_map_flush(*editor.document_key_map);
+        key_map_flush(*editor.compilation_key_map);
         key_map_flush(*editor.listing_key_map);
 
         return;
@@ -3092,10 +3100,18 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
-        case .GO_TO_LINE;       open_modal_interaction(editor, platform, input, modal_interaction_go_to_line_procs);
+        case .GO_TO_LINE;  open_modal_interaction(editor, platform, input, modal_interaction_go_to_line_procs);
 
-        case .START_SELECTING;  view.selecting = true;  text_cursors_join(*view.cursors);
-        case .STOP_SELECTING;   view.selecting = false; text_cursors_join(*view.cursors);
+        case .START_SELECTING; {
+            view.selecting = true;
+            text_cursors_join(*view.cursors);
+            push_cursor_location(view);
+            editor_log(editor, "Mark set");
+        }
+        case .STOP_SELECTING; {
+            view.selecting = false;
+            text_cursors_join(*view.cursors);
+        }
 
         case .DELETE_FORWARD; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
@@ -3391,6 +3407,9 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 // TODO(jt): Add multiline block comments.
             }
         }
+        
+        case .PUSH_CURSOR_LOCATION;  push_cursor_location(view);
+        case .POP_CURSOR_LOCATION;   pop_cursor_location(view);
 
         case .UNDO_EDIT; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
@@ -5798,6 +5817,34 @@ get_line_length_for_line_index :: (document: Document, font: Font, line_index: s
     line_length := font_compute_line_length(font, line_view, binary = document.buffer.binary_mode);
 
     return line_length;
+}
+
+push_cursor_location :: (view: *Document_View) {
+    push_cursor_location(view, view.cursors.c0);
+}
+
+push_cursor_location :: (view: *Document_View, loc: Text_Location) {
+    document := view.document;
+    
+    #assert is_nonzero_power_of_two(document.CURSOR_RING_COUNT);
+    document.cursor_ring[document.cursor_ring_index] = loc;
+    document.cursor_ring_index += 1;
+    document.cursor_ring_index &= document.CURSOR_RING_COUNT - 1;
+}
+
+pop_cursor_location :: (view: *Document_View) {
+    document := view.document;
+    
+    #assert is_nonzero_power_of_two(document.CURSOR_RING_COUNT);
+    document.cursor_ring_index -= 1;
+    document.cursor_ring_index &= document.CURSOR_RING_COUNT - 1;
+    c := document.cursor_ring[document.cursor_ring_index];
+            
+    view.cursors.c0 = c;
+    view.cursors.c1 = c;
+    
+    text_buffer_clamp_cursors(view.document.buffer, *view.cursors);
+    text_cursors_horizontal_move_was_explicit(*view.cursors);
 }
 
 canonicalize_path :: (path: *string) {
