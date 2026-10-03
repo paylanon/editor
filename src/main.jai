@@ -830,7 +830,15 @@ main :: () {
                         case .F8;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F8) });
                         case .F9;                   array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F9) });
                         case .F10;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F10) });
-                        case .F11;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F11) });
+                        case .F11; {
+                            #if OS == .WINDOWS {
+                                if it.key_pressed {
+                                    platform_state.fullscreen = !platform_state.fullscreen;
+                                    Window.toggle_fullscreen(window, platform_state.fullscreen, *platform_state.saved_window_info);
+                                }
+                            }
+                            array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F11) });
+                        }
                         case .F12;                  array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.F12) });
 
                         case .PRINT_SCREEN;         array_add(*input_events, { .KEY, flags, modifiers, cast(u32, Editor.Key.PRINT_SCREEN) });
@@ -971,6 +979,11 @@ main :: () {
 //
 
 Platform_State :: struct {
+    #if OS == .WINDOWS {
+        fullscreen: bool;
+        saved_window_info: Window.Saved_Window_Info; // Used to restore window to previous size after returning from fullscreen.
+    }
+    
     watched_directory_changes: [..] Editor.Watched_Directory_Change; // :Malloc
     watched_directories:       [..] Watched_Directory;               // :Malloc
 

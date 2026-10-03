@@ -86,8 +86,8 @@ TODO(jt): Roadmap:
 - [ ] OPEN_FILE_IN_PROJECT and SEARCH_IN_PROJECT should be (globally) configurable to ignore paths (e.g. contents of .git)
 - [ ] Animate scrolling in mini panel.
 - [ ] Animate opening of the mini panel.
-- [ ] F11 fullscreen on Windows
-- [ ] macOS packaging
+- [X] F11 fullscreen on Windows
+- [X] macOS .app
 - [ ] Linux build
 - [ ] Load System fonts
 - [ ] Multiple Cursors
