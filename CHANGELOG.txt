@@ -11,6 +11,7 @@ New features:
 Other:
 
 - expand_selection now has special treatment for underscores, making it easier to expand selection to identifiers.
+- Selecting by double/triple clicking now behaves better and always keeps to the same line.
 
 alpha 0.0.2
 -----------

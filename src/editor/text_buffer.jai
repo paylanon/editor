@@ -1848,7 +1848,7 @@ text_buffer_move_to_next_blank_line :: (buffer: Text_Buffer, cursors: *Text_Curs
     return original_cursor != cursors.c0;
 }
 
-text_buffer_expand_selection :: (buffer: Text_Buffer, cursors: *Text_Cursors) -> cursor_moved: bool {
+text_buffer_expand_selection :: (buffer: Text_Buffer, cursors: *Text_Cursors, same_line := true) -> cursor_moved: bool {
     ProfileZone("text_buffer_expand_selection");
 
     assert_valid(buffer, cursors);
@@ -1862,9 +1862,23 @@ text_buffer_expand_selection :: (buffer: Text_Buffer, cursors: *Text_Cursors) ->
     swap(*cursors.c0, *cursors.c1);
     forward := text_buffer_move_forward_within(buffer, cursors, true, is_alnum32, must_start_inside = true);
     
-    Matcher :: #type (c: u32) -> bool;
+    matchers: [] (c: u32) -> bool;
+    if same_line {
+        matchers = .[
+            (c: u32) -> bool { return c == #char "_"; },
+            is_punct32,
+            is_nonnewline_space32,
+        ];
+    } else {
+        matchers = .[
+            (c: u32) -> bool { return c == #char "_"; },
+            is_punct32,
+            is_nonnewline_space32,
+            is_newline32,
+        ];
+    }
     
-    for Matcher.[(c: u32) -> bool { return c == #char "_"; }, is_punct32, is_nonnewline_space32, is_newline32] {
+    for matchers {
         if backward || forward {
             break;
         }

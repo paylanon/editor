@@ -212,8 +212,8 @@ FILE_WATCH_BLIND_WINDOW: Apollo_Time : #run milliseconds_to_apollo(250);  // The
 
 UNDO_AUTOFUSE_PERIOD: Apollo_Time : #run milliseconds_to_apollo(500);
 
-MULTICLICK_PERIOD :: #run milliseconds_to_apollo(500); // TODO(jt): Make this configurable. :Config
-MULTICLICK_ABORT_DISTANCE_PIXELS :: 2.0;
+MULTICLICK_PERIOD :: #run milliseconds_to_apollo(400); // TODO(jt): Make this configurable. :Config
+MULTICLICK_ABORT_DISTANCE_PIXELS :: 1.0;
 
 HIGHLIGHT_CUTOFF_SIZE:   s64 : 10 << 20;
 INDENTATION_CUTOFF_SIZE: s64 : 10 << 20;
@@ -460,7 +460,7 @@ Document :: struct {
 
     buffer: Text_Buffer;
     cursors_cold: Text_Cursors; // Used to restore cursors in panel view, if the document was in the background. Otherwise, the view's cursors take precedence.
-    
+
     CURSOR_RING_COUNT :: 16;
     cursor_ring: [CURSOR_RING_COUNT] Text_Location;
     cursor_ring_index: s64;
@@ -2370,7 +2370,7 @@ Document_Action :: enum {
     INDENT_OR_AUTOCOMPLETE;
 
     TOGGLE_COMMENT;
-    
+
     PUSH_CURSOR_LOCATION;
     POP_CURSOR_LOCATION;
 
@@ -2916,7 +2916,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         }
 
         case .EXPAND_SELECTION; {
-            cursor_moved |= text_buffer_expand_selection(document.buffer, *view.cursors);
+            cursor_moved |= text_buffer_expand_selection(document.buffer, *view.cursors, same_line = false);
             view.selecting = true;
         }
 
@@ -3407,7 +3407,7 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
                 // TODO(jt): Add multiline block comments.
             }
         }
-        
+
         case .PUSH_CURSOR_LOCATION;  push_cursor_location(view);
         case .POP_CURSOR_LOCATION;   pop_cursor_location(view);
 
@@ -3634,7 +3634,7 @@ execute_compilation_action :: (editor: *Editor, platform: Platform, input: Input
         }
 
         case .EXPAND_SELECTION; {
-            cursor_moved |= text_buffer_expand_selection(document.buffer, *view.cursors);
+            cursor_moved |= text_buffer_expand_selection(document.buffer, *view.cursors, same_line = false);
             view.selecting = true;
         }
 
@@ -4022,31 +4022,31 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                 // Mouse selection in DOCUMENT views (if we are not multiclicking).
                 //
 
+                row := cast(s64, floor((mouse.y + panel.scroll.value.y) / cell_h));
+                col := 0;
+
+                if row < 0 {
+                    row = 0;
+                    col = 0;
+                } else if row > document.buffer.line_count - 1 {
+                    row = document.buffer.line_count - 1;
+                    col = 1 + document.buffer.line_chars[row];
+                } else if row == document.buffer.line_count - 1 {
+                    line_view := text_buffer_make_view_for_line(document.buffer, row, include_newline = false,, temp);
+                    col=, overflow := font_compute_char_index_on_line(editor.font, line_view, mouse.x - panel_content_rect.x0 + panel.scroll.value.x, binary = document.buffer.binary_mode);
+
+                    // Include synthetic newline at the end of document.
+                    if overflow {
+                        col += 1;
+                    }
+                } else {
+                    // Include newline, so that the cursor can go there.
+                    line_view := text_buffer_make_view_for_line(document.buffer, row, include_newline = true,, temp);
+                    col = font_compute_char_index_on_line(editor.font, line_view, mouse.x - panel_content_rect.x0 + panel.scroll.value.x, binary = document.buffer.binary_mode);
+                }
+
                 // Note that we don't need a click on this frame. We can click elsewhere, and reposition the cursors afterwards.
                 if editor.input_state.mb_left_multiclicks < 2 {
-                    row := cast(s64, floor((mouse.y + panel.scroll.value.y) / cell_h));
-                    col := 0;
-
-                    if row < 0 {
-                        row = 0;
-                        col = 0;
-                    } else if row > document.buffer.line_count - 1 {
-                        row = document.buffer.line_count - 1;
-                        col = 1 + document.buffer.line_chars[row];
-                    } else if row == document.buffer.line_count - 1 {
-                        line_view := text_buffer_make_view_for_line(document.buffer, row, include_newline = false,, temp);
-                        col=, overflow := font_compute_char_index_on_line(editor.font, line_view, mouse.x - panel_content_rect.x0 + panel.scroll.value.x, binary = document.buffer.binary_mode);
-
-                        // Include synthetic newline at the end of document.
-                        if overflow {
-                            col += 1;
-                        }
-                    } else {
-                        // Include newline, so that the cursor can go there.
-                        line_view := text_buffer_make_view_for_line(document.buffer, row, include_newline = true,, temp);
-                        col = font_compute_char_index_on_line(editor.font, line_view, mouse.x - panel_content_rect.x0 + panel.scroll.value.x, binary = document.buffer.binary_mode);
-                    }
-
                     text_buffer_move_to(document.buffer, *view.cursors, col, row, !(editor.input_state.keys[Key.MB_LEFT] & .PRESSED));
                 }
 
@@ -4055,6 +4055,7 @@ update_panel_for_mouse :: (editor: *Editor, platform: Platform, input: Input, pa
                         // TODO(jt): @Bug Keep This selection on the same line.
                         text_buffer_expand_selection(document.buffer, *view.cursors);
                     } else if editor.input_state.mb_left_multiclicks >= 3 {
+                        text_buffer_move_to(document.buffer, *view.cursors, col, row, false);
                         start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y);
                         end   := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
 
@@ -5825,7 +5826,7 @@ push_cursor_location :: (view: *Document_View) {
 
 push_cursor_location :: (view: *Document_View, loc: Text_Location) {
     document := view.document;
-    
+
     #assert is_nonzero_power_of_two(document.CURSOR_RING_COUNT);
     document.cursor_ring[document.cursor_ring_index] = loc;
     document.cursor_ring_index += 1;
@@ -5834,15 +5835,15 @@ push_cursor_location :: (view: *Document_View, loc: Text_Location) {
 
 pop_cursor_location :: (view: *Document_View) {
     document := view.document;
-    
+
     #assert is_nonzero_power_of_two(document.CURSOR_RING_COUNT);
     document.cursor_ring_index -= 1;
     document.cursor_ring_index &= document.CURSOR_RING_COUNT - 1;
     c := document.cursor_ring[document.cursor_ring_index];
-            
+
     view.cursors.c0 = c;
     view.cursors.c1 = c;
-    
+
     text_buffer_clamp_cursors(view.document.buffer, *view.cursors);
     text_cursors_horizontal_move_was_explicit(*view.cursors);
 }
