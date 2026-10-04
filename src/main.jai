@@ -933,11 +933,10 @@ main :: () {
             // :BatterySaver
             //
             // For various reasons we can't always count on V-sync and render queue depth to pace us.
-            //
             // (For one, we'd like to be low-latency, and will try to enable mailbox presentation, etc.)
+            //
             // However, this means that we could have gotten through the frame really fast, and would
-            // start the next one as soon as there are events in our message queue (which there are if the
-            // mouse is being moved, for instance).
+            // start the next one as soon as there are events in our message queue (like if the mouse is being moved).
             //
             // For this reason, we also manually sleep here, approximately until the next frame should start.
             //

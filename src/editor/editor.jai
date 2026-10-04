@@ -848,18 +848,15 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
         dt = 1.0 / input.monitor_refresh_rate;
     }
 
+    // :BatterySaver
+    //
     // With wants_this_frame we control whether early out to save battery/fans. Currently, we early
     // out just before submitting stuff to the GPU, but we could take this further and early out
     // during the panel processing loop, etc.
     //
-    // :BatterySaver
-    //
     // Note that this is volatile and sensitive to changes in other parts of the code. For instance,
     // we we add a new type of input, we also have to check here to see if it should cause us to
     // always render the frame.
-    //
-    // TODO(jt): Windows still reports a very high power usage if we just move the mouse around. Can
-    // we do something better?
     wants_this_frame :=
         editor.is_first_frame ||
         input.window_size != editor.input_state.window_size ||
