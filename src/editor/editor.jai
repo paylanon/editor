@@ -6,7 +6,8 @@ TODO(jt): Known critical bugs:
 
 TODO(jt): Known serious bugs:
 
-(none currently)
+- Refreshing large files (such as the output of objdump) from disk takes too long. The delete needs to be optimized.
+- Indenting large blocks of code (or entire files) takes too long. We need to do some kind of incremental/cooperative thing going.
 
 TODO(jt): Roadmap:
 
