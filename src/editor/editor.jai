@@ -27,7 +27,7 @@ TODO(jt): Roadmap:
 - [X] Keymap support
 - [X] Find/replace and modal/interactive commands.
 - [X] Open non-utf8 text buffers and binary files.
-- [X] Flash cursor with typing (needs tuning)
+- [X] Flash cursor with typing
 - [X] Syntax Highlighting
 - [X] Mode defined parentheses (surround, autoclose)
 - [X] Matching parentheses highlight
@@ -54,7 +54,7 @@ TODO(jt): Roadmap:
 - [X] Dark text color under bright rectangles (cursor, selection, line)
 - [X] Rotated session logs
 - [X] M-g g (go to line)
-- [~] C-M-p, C-M-n (move line up/down) SWAP_LINE_UP/SWAP_LINE_DOWN ; Should also work for selections
+- [X] C-M-p, C-M-n (move line up/down) SWAP_LINE_UP/SWAP_LINE_DOWN
 - [X] M-d, M-<backspace> DELETE_FORWARD_WORD/DELETE_BACKWARD_WORD
 - [X] C-j join-next-line
 - [X] GO_TO_MATCHING_PAREN (forward/backward)? Maybe we want to go to start/end of current scope to be more flexible than Emacs?
@@ -80,13 +80,14 @@ TODO(jt): Roadmap:
 - [ ] M-q (reflow)
 - [ ] M-u, M-l (upcase/downcase word and move cursor)
 - [ ] q to hide compilation or listing
-- [ ] Mouse interaction in the mini panel (text selection, item clicking, item hover?)
+- [ ] Mouse interaction in the mini panel (text selection, item clicking)
 - [ ] Mouse interaction in the modal interaction (text selection)
 - [ ] Mouse interaction in the mode line (click change view, lang, crlf, indentation level)
 - [ ] SEARCH should highlight all matches in the current view, not just the first one on the line.
 - [ ] OPEN_FILE_IN_PROJECT and SEARCH_IN_PROJECT should be (globally) configurable to ignore paths (e.g. contents of .git)
 - [ ] Animate scrolling in mini panel.
 - [ ] Animate opening of the mini panel.
+- [ ] Cursor flash in mini panel and modal interaction.
 - [X] F11 fullscreen on Windows
 - [X] macOS .app
 - [ ] Linux build
@@ -111,7 +112,7 @@ TODO(jt): Roadmap:
 - [ ] Keep displaying (and updating) panel selection while SEARCH is active.
 - [ ] Render subtle symbols for whitespace characters (space, tab, cr, lf)
 - [ ] Support for dropping files into the window
-- [ ] Pretty things: blinking cursor, cursor trail, ...
+- [ ] Pretty things: blinking cursor, cursor trail, round corners for cursor&selection, scrollbars...
 - [ ] Flash pasted text
 - [ ] Flash text inserted by undo/redo
 - [ ] Writing CRLF and CRLF navigation (cursor movement should skip over)
@@ -121,7 +122,7 @@ TODO(jt): Roadmap:
 
 - [ ] 4coder-like poor man's hex mode - substitute binary for escaped hex codes (e.g. 255 -> /ff) during layout and position calculation.
 - [ ] Hex mode view
-- [ ] Proper projects (project config, compilations, search ignore list, find/replace)
+- [ ] Proper projects: project config, compilations, search ignore list, find/replace.
 - [ ] if (0) and #if 0 produce desaturated syntax highlighting
 - [ ] Get rid of FreeType without compromising quality (kb_text_shape + Slug)
 - [ ] Version control view (Git only?, via plugin interface?)
@@ -154,6 +155,7 @@ Vector4        :: Math.Vector4;
 floor          :: Math.floor;
 ceil           :: Math.ceil;
 fmod_cycling   :: Math.fmod_cycling;
+abs            :: Math.abs;
 sqrt           :: Math.sqrt;
 lerp           :: Math.lerp;
 length         :: Math.length;
@@ -3037,78 +3039,96 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             }
         }
 
+        // Unlike Emacs, where move-text.el allows doing freeform stuff with selections covering parts of lines,
+        // we always operate on multiples of whole lines, since I never used this freeform stuff myself.
+        //
+        // TODO(jt): Because swap_line_up/swap_line_down move the single previous/next line instead of the selection,
+        // the selection recorded in the undo is wrong. Maybe optimizing the amount of copying wasn't worth it.
         case .SWAP_LINE_UP; {
-            // TODO(jt): Implement version for moving selection.
-            text_cursors_join(*view.cursors);
-            if view.cursors.c0 == view.cursors.c1 && view.cursors.c0.y > 0 {
-                original_cursor := view.cursors.c0;
-
-                prev_start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y - 1);
-                prev_end   := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y - 1);
+            prev_line_index := min(view.cursors.c0.y, view.cursors.c1.y) - 1;
+            if prev_line_index >= 0 {
+                selected_lines := abs(view.cursors.c0.y - view.cursors.c1.y) + 1;
+                
+                prev_start := text_buffer_get_start_of_line(document.buffer, prev_line_index);
+                prev_end   := text_buffer_get_end_of_line(document.buffer, prev_line_index, include_newline = true);
                 prev       := text_buffer_make_view_for_interval(document.buffer, prev_start, prev_end, force_allocate = true,, temp);
+                
+                // If the selection extends to the last line where there is no newline at the end, we temporarily
+                // add a newline so that insert doesn't OOB assert. Because we can't create something out of nothing,
+                // we delete this temporary newline afterwards. There is probably a simpler way of doing this.
+                //   -jt, 6 October 2026
+                touching_last_line := max(view.cursors.c0.y, view.cursors.c1.y) == document.buffer.line_count - 1;
 
-                curr_start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y);
-                curr_end   := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
-                curr       := text_buffer_make_view_for_interval(document.buffer, curr_start, curr_end, force_allocate = true,, temp);
-
-                cursors := view.cursors;
-                cursors.c0 = curr_start;
-                cursors.c1 = curr_end;
-                text_buffer_delete_selection(*document.buffer, *cursors, .NONE);
-
+                cursors: Text_Cursors;
                 cursors.c0 = prev_start;
                 cursors.c1 = prev_end;
-                text_buffer_delete_selection(*document.buffer, *cursors, .FUSE);
-                text_buffer_insert(*document.buffer, *cursors, curr, .FUSE);
+                text_buffer_delete_selection(*document.buffer, *cursors, .NONE);
+                
+                if touching_last_line {
+                    cursors: Text_Cursors;
+                    cursors.c0 = text_buffer_get_end(document.buffer);
+                    cursors.c1 = text_buffer_get_end(document.buffer);
+                    text_buffer_insert_char(*document.buffer, *cursors, #char "\n", .FUSE);
+                }
 
-                cursors.c0 = curr_start;
-                cursors.c1 = curr_start;
+                cursors.c0.y += selected_lines;
+                cursors.c1.y += selected_lines;
                 text_buffer_insert(*document.buffer, *cursors, prev, .FUSE);
+                
+                if touching_last_line {
+                    cursors: Text_Cursors;
+                    cursors.c0 = text_buffer_get_end(document.buffer);
+                    cursors.c1 = text_buffer_get_end(document.buffer);
+                    deleted := text_buffer_delete_backward(*document.buffer, *cursors, .FUSE);
+                    sanity_assert(deleted == "\n");
+                }
 
-                // TODO(jt): Patch selection in undo so that we don't show it?
-
-                original_cursor.y -= 1;
-
-                view.cursors.c0 = original_cursor;
-                view.cursors.c1 = original_cursor;
+                view.cursors.c0.y -= 1;
+                view.cursors.c1.y -= 1;
 
                 buffer_changed = true;
             }
         }
         case .SWAP_LINE_DOWN; {
-            // TODO(jt): Implement version for moving selection.
-            text_cursors_join(*view.cursors);
-            if view.cursors.c0.y < document.buffer.line_count - 1 {
-                original_cursor := view.cursors.c0;
+            next_line_index := max(view.cursors.c0.y, view.cursors.c1.y) + 1;
+            if next_line_index < document.buffer.line_count {
+                selected_lines := abs(view.cursors.c0.y - view.cursors.c1.y) + 1;
 
-                curr_start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y);
-                curr_end   := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y);
-                curr       := text_buffer_make_view_for_interval(document.buffer, curr_start, curr_end, force_allocate = true,, temp);
-
-                next_start := text_buffer_get_start_of_line(document.buffer, view.cursors.c0.y + 1);
-                next_end   := text_buffer_get_end_of_line(document.buffer, view.cursors.c0.y + 1);
+                // If the next line is the last line where there is no newline at the end, we temporarily
+                // add a newline so that we don't join lines when we move it up. Because we can't create something out of nothing,
+                // we delete a newline of the thing that traveled down. There is probably a simpler way of doing this.
+                //   -jt, 6 October 2026
+                touching_last_line := next_line_index == document.buffer.line_count - 1;
+                if touching_last_line {
+                    cursors: Text_Cursors;
+                    cursors.c0 = text_buffer_get_end(document.buffer);
+                    cursors.c1 = text_buffer_get_end(document.buffer);
+                    text_buffer_insert_char(*document.buffer, *cursors, #char "\n", .NONE);
+                }
+                
+                next_start := text_buffer_get_start_of_line(document.buffer, next_line_index);
+                next_end   := text_buffer_get_end_of_line(document.buffer, next_line_index, include_newline = true);
                 next       := text_buffer_make_view_for_interval(document.buffer, next_start, next_end, force_allocate = true,, temp);
-
-                cursors := view.cursors;
+                
+                cursors: Text_Cursors;
                 cursors.c0 = next_start;
                 cursors.c1 = next_end;
-                text_buffer_delete_selection(*document.buffer, *cursors, .NONE);
+                text_buffer_delete_selection(*document.buffer, *cursors, ifx touching_last_line then .FUSE else .NONE);
 
-                cursors.c0 = curr_start;
-                cursors.c1 = curr_end;
-                text_buffer_delete_selection(*document.buffer, *cursors, .FUSE);
+                cursors.c0.y -= selected_lines;
+                cursors.c1.y -= selected_lines;
                 text_buffer_insert(*document.buffer, *cursors, next, .FUSE);
+                
+                if touching_last_line {
+                    cursors: Text_Cursors;
+                    cursors.c0 = text_buffer_get_end(document.buffer);
+                    cursors.c1 = text_buffer_get_end(document.buffer);
+                    deleted := text_buffer_delete_backward(*document.buffer, *cursors, .FUSE);
+                    sanity_assert(deleted == "\n");
+                }
 
-                cursors.c0 = next_start;
-                cursors.c1 = next_start;
-                text_buffer_insert(*document.buffer, *cursors, curr, .FUSE);
-
-                // TODO(jt): Patch selection in undo so that we don't show it?
-
-                original_cursor.y += 1;
-
-                view.cursors.c0 = original_cursor;
-                view.cursors.c1 = original_cursor;
+                view.cursors.c0.y += 1;
+                view.cursors.c1.y += 1;
 
                 buffer_changed = true;
             }
@@ -3153,9 +3173,10 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
 
                         opens, closes, paired_char := is_part_of_surround_pair(document, prev_byte);
                         if opens && paired_char == curr_byte {
-                            deleted := text_buffer_delete_forward(*document.buffer, *view.cursors, 1, .NONE);
-                            buffer_changed |= deleted.count > 0;
-                            buffer_changed |= text_buffer_delete_backward(*document.buffer, *view.cursors, .FUSE);
+                            deleted_forward  := text_buffer_delete_forward(*document.buffer, *view.cursors, 1, .NONE);
+                            deleted_backward := text_buffer_delete_backward(*document.buffer, *view.cursors, .FUSE);
+                            buffer_changed |= deleted_forward.count > 0;
+                            buffer_changed |= deleted_backward.count > 0;
 
                             handled = true;
                         }
@@ -3164,7 +3185,9 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
 
                 if !handled {
                     view.selecting = false;
-                    buffer_changed |= text_buffer_delete_backward(*document.buffer, *view.cursors, .CAN_AUTOFUSE);
+                    
+                    deleted := text_buffer_delete_backward(*document.buffer, *view.cursors, .CAN_AUTOFUSE);
+                    buffer_changed |= deleted.count > 0;
 
                     document.time_of_last_simple_edit = input.time;
                 }

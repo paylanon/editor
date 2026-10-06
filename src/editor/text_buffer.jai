@@ -536,7 +536,7 @@ text_buffer_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, cha
 }
 
 // TODO(jt): @Cleanup Take a second parameter to specify the count to delete and do delete in batch.
-text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, undo_modifier := Undo_Modifier.NONE) -> changed: bool {
+text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, undo_modifier := Undo_Modifier.NONE) -> /* Pointing to the internal gap buffer */ string {
     ProfileZone("text_buffer_delete_backward");
 
     assert_valid(buffer, cursors);
@@ -549,7 +549,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
         deleted := text_buffer_delete_selection(buffer, cursors);
         assert(cursors.c0 == cursors.c1);
 
-        return deleted.count > 0;
+        return deleted;
     }
 
     gb_index := text_buffer_get_gap_buffer_index_for_location(buffer, cursors.c0);
@@ -557,11 +557,12 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
     bytes := gap_buffer_get_bytes_before_gap(buffer.gb);
     if bytes.count == 0 {
-        return false;
+        return "";
     }
 
     line_to_invalidate := max(cursors.c0.y - 1, 0);
 
+    deleted: string;
     if bytes[bytes.count - 1] == "\n" {
         assert(cursors.c0.x == 0);
         assert(cursors.c0.y > 0);
@@ -581,14 +582,14 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
         cursors.c0.x = new_cursor_x;
         cursors.c0.y -= 1;
 
-        deleted := gap_buffer_delete_backward(*buffer.gb, 1);
+        deleted = cast(string, gap_buffer_delete_backward(*buffer.gb, 1));
 
         if undo_modifier != .OMIT {
             discard_unapplied_edits(buffer);
 
             edit := array_add(*buffer.edits);
             edit.type = .DELETE_BACKWARD;
-            edit.text = arena_push_string(buffer.edit_text_arena, cast(string, deleted));
+            edit.text = arena_push_string(buffer.edit_text_arena, deleted);
             edit.text_mark = arena_get_mark(buffer.edit_text_arena);
             edit.gb_index_before = gb_index;
             edit.gb_index_after = gb_index - deleted.count; sanity_assert(edit.gb_index_after == buffer.gb.gap_index);
@@ -621,7 +622,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
             cursors.c0.x -= 1;
 
-            deleted := gap_buffer_delete_backward(*buffer.gb, codepoint_advance);
+            deleted = cast(string, gap_buffer_delete_backward(*buffer.gb, codepoint_advance));
             assert(codepoint_advance == deleted.count);
 
             if undo_modifier != .OMIT {
@@ -629,7 +630,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
                 edit := array_add(*buffer.edits);
                 edit.type = .DELETE_BACKWARD;
-                edit.text = arena_push_string(buffer.edit_text_arena, cast(string, deleted));
+                edit.text = arena_push_string(buffer.edit_text_arena, deleted);
                 edit.text_mark = arena_get_mark(buffer.edit_text_arena);
                 edit.gb_index_before = gb_index;
                 edit.gb_index_after = gb_index - deleted.count; sanity_assert(edit.gb_index_after == buffer.gb.gap_index);
@@ -658,7 +659,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
     assert_valid(buffer, cursors);
 
-    return true;
+    return deleted;
 }
 
 text_buffer_delete_forward_within :: (buffer: *Text_Buffer, cursors: *Text_Cursors, is_inside: (u32) -> bool) -> /* Pointing to the internal gap buffer */ string {
