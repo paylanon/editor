@@ -23,7 +23,7 @@ Global_Config :: struct {
     };
 }
 
-parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
+parse_and_apply_config :: (editor: *Editor, platform: Platform, _input: string) -> success: bool {
     success := true;
 
     lexer: Config_Lexer;
@@ -39,7 +39,9 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
         editor_log(editor, "Invalid config version: % (supported is %)", version, CONFIG_VERSION);
         return false;
     }
-    
+
+    config_macos_search_path: string;
+
     config_keybinds_panel:       [..] Keybind_Pair(Panel_Action);
     config_keybinds_document:    [..] Keybind_Pair(Document_Action);
     config_keybinds_compilation: [..] Keybind_Pair(Compilation_Action);
@@ -74,6 +76,7 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
             }
 
             if parsed_section == {
+                case "macos";                       section = .MACOS;
                 case "keybinds.panel";              section = .KEYBINDS_PANEL;
                 case "keybinds.document";           section = .KEYBINDS_DOCUMENT;
                 case "keybinds.compilation";        section = .KEYBINDS_COMPILATION;
@@ -99,6 +102,22 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
                     if !success {
                         editor_log(editor, "Unknown key on line %", lexer.line_index + 1);
                         return false;
+                    }
+                }
+
+                case .MACOS; {
+                    success=, key, value := parse_pair(*lexer);
+                    if !success {
+                        editor_log(editor, "Failed to parse key-value pair on line %", lexer.line_index + 1);
+                        return false;
+                    }
+
+                    if key == {
+                        case "search_path";  config_macos_search_path = value;
+                        case; {
+                            editor_log(editor, "Unknown key on line %", lexer.line_index + 1);
+                            return false;
+                        }
                     }
                 }
 
@@ -154,6 +173,13 @@ parse_and_apply_config :: (editor: *Editor, _input: string) -> success: bool {
     
     if editor.config.theme.count {
         change_theme(editor, editor.config.theme);
+    }
+
+    #if OS == .MACOS {
+        platform.clear_search_path();
+        if config_macos_search_path.count {
+            platform.add_search_path(config_macos_search_path);
+        }
     }
 
     // TODO(jt): By nuking everything from the keymaps, we may make the editor unusable, e.g. if the config misses keybinds for elementary things
@@ -312,6 +338,7 @@ apply_emergency_config :: (editor: *Editor) {
 
 Config_Section :: enum {
     GLOBAL;
+    MACOS;
     KEYBINDS_PANEL;
     KEYBINDS_DOCUMENT;
     KEYBINDS_COMPILATION;
