@@ -347,7 +347,7 @@ key_map_flush :: (key_map: *Key_Map) {
 
 key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, action: T, shortcut: Shortcut {
     // Do nothing, if we haven't got shortcuts to compare against.
-    if !key_map.registered_shortcuts.count {
+    if !key_map.registered.count {
         return false, default_of(T), {};
     }
 
@@ -378,7 +378,7 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
 
             if shortcut_equals_nocase(it.shortcut, key_map.buffered_input) {
                 key_map.buffered_input = {};
-                return false, it.action, it;
+                return false, it.action, it.shortcut;
             }
         }
 
