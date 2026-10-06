@@ -96,49 +96,50 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                 if document {
                     old_cursor_y   := view.cursors.c0.y;
                     new_item_index := -1;
-                    
-                    gap_buffer_move_gap_to(*document.buffer.gb, 0);
 
                     // TODO(jt): @Speed This causes us to miss frames above 4MB buffers. It is serviceable
                     // up to about 64MB, but this definitely needs to be 100x faster. An easy win would be
                     // fan-out & collect threading, but we should also do SIMD.
-                    for :text_buffer_lines line_text, line_index: document.buffer {
-                        found, found_indices := line_search(line_text, search_parts, smartcase,, temp);
-                        if found {
-                            found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
-                            
-                            s := line_text;
+                    {
+                        push_allocator(arena_allocator(mini_panel.items_arena)); // So that the one line that crosses the gap survives until the mini panel closes.
+                        for :text_buffer_context_allocator_lines line_text, line_index: document.buffer {
+                            found, found_indices := line_search(line_text, search_parts, smartcase,, temp);
+                            if found {
+                                found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
 
-                            x0 := found_index;
-                            if !document.buffer.binary_mode {
-                                x0 = count_utf8_chars(String.slice(line_text, 0, found_index));
-                            }
-                            x1 := x0 + search_part1_char_count;
+                                s := line_text;
 
-                            highlight := array_add(*panel.highlights);
-                            highlight.x0 = x0;
-                            highlight.x1 = x1;
-                            highlight.y  = line_index;
+                                x0 := found_index;
+                                if !document.buffer.binary_mode {
+                                    x0 = count_utf8_chars(String.slice(line_text, 0, found_index));
+                                }
+                                x1 := x0 + search_part1_char_count;
 
-                            item_index := mini_panel.items.count;
-                            item := array_add(*mini_panel.items);
-                            item.text = s;
-                            if document.buffer.binary_mode {
-                                item.flags |= .BINARY;
-                            }
-                            item.highlight_x0 = x0;
-                            item.highlight_x1 = x1;
-                            item.line_number_or_zero = line_index + 1;
-                            item.line_number_padding = SEARCH_LINE_NUMBER_PADDING;
+                                highlight := array_add(*panel.highlights);
+                                highlight.x0 = x0;
+                                highlight.x1 = x1;
+                                highlight.y  = line_index;
 
-                            item_userdata := arena_push(mini_panel.items_arena, Search_Item_Userdata);
-                            item_userdata.x = x0;
-                            item_userdata.y = line_index;
+                                item_index := mini_panel.items.count;
+                                item := array_add(*mini_panel.items);
+                                item.text = s;
+                                if document.buffer.binary_mode {
+                                    item.flags |= .BINARY;
+                                }
+                                item.highlight_x0 = x0;
+                                item.highlight_x1 = x1;
+                                item.line_number_or_zero = line_index + 1;
+                                item.line_number_padding = SEARCH_LINE_NUMBER_PADDING;
 
-                            item.userdata = item_userdata;
+                                item_userdata := arena_push(mini_panel.items_arena, Search_Item_Userdata);
+                                item_userdata.x = x0;
+                                item_userdata.y = line_index;
 
-                            if new_item_index == -1 && line_index >= old_cursor_y {
-                                new_item_index = item_index;
+                                item.userdata = item_userdata;
+
+                                if new_item_index == -1 && line_index >= old_cursor_y {
+                                    new_item_index = item_index;
+                                }
                             }
                         }
                     }

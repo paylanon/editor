@@ -13,7 +13,7 @@ TODO(jt): Roadmap:
 
 - [X] Display text on screen
 - [X] Nice font rendering
-- [X] Gap Buffer (or other text datastructure) jdmklsadmiowe3wmaejlk
+- [X] Gap Buffer (or other text datastructure)
 - [X] Basic file navigation
 - [X] Basic file editing
 - [X] Load file/Save file with file navigation in mini panel
@@ -5669,7 +5669,7 @@ run_compilation :: (editor: *Editor, platform: Platform, panel: *Panel) {
 
     text_buffer_insert(*document.buffer, *view.cursors, tprint("\nCompilation exited after % seconds with code: % (exit type: %)\n", to_float64_seconds(time_elapsed), exit_code, exit_type), undo_modifier = .OMIT);
 
-    for :text_buffer_lines line_text, line_index: document.buffer {
+    for :text_buffer_temp_lines line_text, line_index: document.buffer {
         found, link := find_compilation_link(line_text);
         if found {
             ce := array_add(*document.compilation_errors);

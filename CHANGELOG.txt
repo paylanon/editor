@@ -8,6 +8,10 @@ New features:
   add previous cursor positions to the undo ring. You can then pop_cursor_location.
 - F11 fullscreen is now supported on Windows.
 
+Speed improvements:
+
+- Search now doesn't arena-allocate the result strings. This makes it go from 9ms -> 3ms on kb_text_shape.h. Contribution by @paylanon.
+
 Other:
 
 - expand_selection now has special treatment for underscores, making it easier to expand selection to identifiers.

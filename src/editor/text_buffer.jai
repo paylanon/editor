@@ -2002,11 +2002,35 @@ text_buffer_get_gap_buffer_index_for_location :: (buffer: Text_Buffer, loc: Text
     return index;
 }
 
-text_buffer_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
+text_buffer_context_allocator_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
     REVERSE :: cast(bool, flags & .REVERSE);
     POINTER :: cast(bool, flags & .POINTER);
-    #assert !REVERSE "text_buffer_lines does not support reverse iteration";
-    #assert !POINTER "text_buffer_lines does not support pointer iteration";
+    #assert !REVERSE "text_buffer_context_allocator_lines does not support reverse iteration";
+    #assert !POINTER "text_buffer_context_allocator_lines does not support pointer iteration";
+
+
+    // We go straight to the gap buffer and count its indices manually, so that
+    // we avoid the scan that text_buffer_get_gap_buffer_index_for_line
+    // would have to do each time through the loop.
+    //
+    // Note that even though we pass in the context allocator, making of the view will only
+    // allocate for one of the lines - the one that crosses the gap.
+    gb_index := 0;
+    for i: 0..buffer.line_count - 1 {
+        `it_index := i;
+        `it       := cast(string, gap_buffer_make_view(buffer.gb, gb_index, buffer.line_bytes[i],, context.allocator));
+
+        gb_index += buffer.line_bytes[i];
+
+        #insert(remove = #assert(false)) body;
+    }
+}
+
+text_buffer_temp_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
+    REVERSE :: cast(bool, flags & .REVERSE);
+    POINTER :: cast(bool, flags & .POINTER);
+    #assert !REVERSE "text_buffer_temp_lines does not support reverse iteration";
+    #assert !POINTER "text_buffer_temp_lines does not support pointer iteration";
 
 
     // We go straight to the gap buffer and count its indices manually, so that

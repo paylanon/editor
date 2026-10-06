@@ -276,7 +276,7 @@ advance :: (editor: *Editor, platform: Platform, input: Input) {
             // TODO(jt): @Speed This loop causes us to miss frames above 4MB buffers. It is serviceable
             // up to about 64MB, but this definitely needs to be faster. An easy win would be
             // fan-out & collect threading, but we should also SIMD find_index_from_left_nocase.
-            for :text_buffer_lines line_text, line_index: document.buffer {
+            for :text_buffer_temp_lines line_text, line_index: document.buffer {
                 // This is number of bytes if we are in binary mode, otherwise number of characters.
                 processed_chars: s64 = 0;
 

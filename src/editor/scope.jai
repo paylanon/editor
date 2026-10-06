@@ -183,7 +183,7 @@ _update_scopes :: (document: *Document, indentation_pairs: [] Paren_Pair,
     inside_single_line_string := false;
     inside_multi_line_string  := false;
 
-    for :text_buffer_lines line_text, line_index: document.buffer {
+    for :text_buffer_temp_lines line_text, line_index: document.buffer {
         for byte_index: 0..line_text.count - 1 {
             if !inside_single_line_string && !inside_multi_line_string {
                 #if line_comment.count {
