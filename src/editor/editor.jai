@@ -1569,7 +1569,7 @@ update_and_render :: (editor: *Editor, platform: Platform, renderer: Renderer, i
                     }
 
                     offset_y: f64 = mp_y + cast(f64, it + 1) * cell_h - mini_viewport_y0;
-                    color := editor.theme.mini_panel_item_text_color;
+                    color := ifx item.text_color != {} then item.text_color else editor.theme.mini_panel_item_text_color;
                     if item.flags & .WARNING {
                         color = editor.theme.mini_panel_item_warning_text_color;
                     }
@@ -2591,7 +2591,25 @@ route_event_to_mini_panel :: (editor: *Editor, event: Input_Event, platform: Pla
             }
         }
 
-        case .CONFIRM;                 buffer_changed |= mp.procs.confirm(editor, platform, input);
+        case .NEXT_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, true);
+            buffer_changed = true;
+        }
+
+        case .PREVIOUS_HISTORY_ELEMENT; {
+            walk_mini_panel_history(mp, false);
+            buffer_changed = true;
+        }
+        
+        case .EMBARK_ACT; {
+            editor.embark_panel.open ^= true;
+        }
+        
+        case .CONFIRM; {
+            if mp.item_index != -1 append_to_mini_panel_history(editor, platform, mp);
+            buffer_changed |= mp.procs.confirm(editor, platform, input);
+        }
+        
         case .CANCEL_OR_STOP_SELECTING; {
             if editor.embark_panel.open {
                 editor.embark_panel.open = false;
