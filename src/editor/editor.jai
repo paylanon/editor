@@ -507,6 +507,7 @@ Document :: struct {
 
     buffer: Text_Buffer;
     cursors_cold: Text_Cursors; // Used to restore cursors in panel view, if the document was in the background. Otherwise, the view's cursors take precedence.
+    redo_accumulator: [2] s64;
 
     CURSOR_RING_COUNT :: 16;
     cursor_ring: [CURSOR_RING_COUNT] Text_Location;
@@ -4045,7 +4046,13 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         case .UNDO_EDIT; {
             document.flags |= .MODIFY_ATTEMPT_THIS_FRAME;
             if !(document.flags & .READONLY) {
-                buffer_changed |= text_buffer_undo_edit(*document.buffer, *view.cursors);
+                if document.redo_accumulator[1] {
+                    buffer_changed |= text_buffer_redo_edit(*document.buffer, *view.cursors);
+                    document.redo_accumulator[1] -= 1;
+                } else {
+                    buffer_changed |= text_buffer_undo_edit(*document.buffer, *view.cursors);
+                    document.redo_accumulator[0] += 1;
+                }
             }
         }
         case .REDO_EDIT; {
@@ -4188,7 +4195,13 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             });
         }
     }
-
+    
+    if action != .UNDO_EDIT {
+        
+        document.redo_accumulator[1] = document.redo_accumulator[0];
+        document.redo_accumulator[0] = 0;
+    }
+    
     if cursor_moved || buffer_changed {
         // The cursor position interpolation gets setup in a centralized place instead of here, because the
         // cursor can be moved from other places than this one (e.g. mouse, SEARCH mini
@@ -4197,8 +4210,9 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
         // :CentralizedCursorInterpolationSetup
         view.flags |= .RECEIVED_DIRECT_KEYBOARD_INTERACTION;
         view.flags |= .CLAMP_SCROLL_TO_CURSOR;
+        
     }
-
+    
     if buffer_changed {
         document.flags |= .MODIFIED_THIS_FRAME;
         document.flags |= .MODIFIED;
