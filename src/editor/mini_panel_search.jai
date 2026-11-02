@@ -11,11 +11,11 @@ mini_panel_search_procs: Mini_Panel_Procs = {
     true
 };
 
-SEARCH_LINE_NUMBER_PADDING :: 6;
-
 #scope_file
 
 history: Mini_Panel_History;
+
+SEARCH_LINE_NUMBER_PADDING :: 6;
 
 Search_Userdata :: struct {
     original_x: s64; // Not used for listings.
@@ -104,51 +104,46 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     // TODO(jt): @Speed This causes us to miss frames above 4MB buffers. It is serviceable
                     // up to about 64MB, but this definitely needs to be 100x faster. An easy win would be
                     // fan-out & collect threading, but we should also do SIMD.
+                    {
+                        push_allocator(arena_allocator(mini_panel.items_arena)); // So that the one line that crosses the gap survives until the mini panel closes.
+                        for :text_buffer_context_allocator_lines line_text, line_index: document.buffer {
+                            found, found_indices := line_search(line_text, search_parts, smartcase,, temp);
+                            if found {
+                                found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
 
-                    for :text_buffer_lines line_text, line_index: document.buffer {
-                        found, found_indices := line_search(line_text, search_parts, smartcase,, temp);
-                        if found {
-                            found_index := found_indices[0]; // TODO(jt): @Incomplete Highlight all found parts.
-                            
-                            // line_number_prefix := temp_right_pad(tprint("%  ", line_index + 1), 4);
+                                s := line_text;
 
-                            // TODO(jt): @Cleanup We do additional manual copy into our arena here, because MEMORY_DEBUGGER otherwise
-                            // flags this as 'an allocation for an address that the memory debugging system thought was still live'.
-                            // See :MemoryDebuggerVsArenas.
-                            // _s := tprint("%%", line_number_prefix, line_text);
-                            // s := arena_push_string(mini_panel.items_arena, _s);
-                            
-                            s := line_text;
+                                x0 := found_index;
+                                if !document.buffer.binary_mode {
+                                    x0 = count_utf8_chars(String.slice(line_text, 0, found_index));
+                                }
+                                x1 := x0 + search_part1_char_count;
 
-                            x0 := found_index;
-                            if !document.buffer.binary_mode {
-                                x0 = count_utf8_chars(String.slice(line_text, 0, found_index));
-                            }
-                            x1 := x0 + search_part1_char_count;
+                                highlight := array_add(*panel.highlights);
+                                highlight.x0 = x0;
+                                highlight.x1 = x1;
+                                highlight.y  = line_index;
 
-                            highlight := array_add(*panel.highlights);
-                            highlight.x0 = x0;
-                            highlight.x1 = x1;
-                            highlight.y  = line_index;
+                                item_index := mini_panel.items.count;
+                                item := array_add(*mini_panel.items);
+                                item.text = s;
+                                if document.buffer.binary_mode {
+                                    item.flags |= .BINARY;
+                                }
+                                item.highlight_x0 = x0;
+                                item.highlight_x1 = x1;
+                                item.line_number_or_zero = line_index + 1;
+                                item.line_number_padding = SEARCH_LINE_NUMBER_PADDING;
 
-                            item_index := mini_panel.items.count;
-                            item := array_add(*mini_panel.items);
-                            item.text = s;
-                            if document.buffer.binary_mode {
-                                item.flags |= .BINARY;
-                            }
-                            item.highlight_x0 = SEARCH_LINE_NUMBER_PADDING + x0;
-                            item.highlight_x1 = SEARCH_LINE_NUMBER_PADDING + x1;
-                            item.line_number = line_index + 1;
+                                item_userdata := arena_push(mini_panel.items_arena, Search_Item_Userdata);
+                                item_userdata.x = x0;
+                                item_userdata.y = line_index;
 
-                            item_userdata := arena_push(mini_panel.items_arena, Search_Item_Userdata);
-                            item_userdata.x = x0;
-                            item_userdata.y = line_index;
+                                item.userdata = item_userdata;
 
-                            item.userdata = item_userdata;
-
-                            if new_item_index == -1 && line_index >= old_cursor_y {
-                                new_item_index = item_index;
+                                if new_item_index == -1 && line_index >= old_cursor_y {
+                                    new_item_index = item_index;
+                                }
                             }
                         }
                     }

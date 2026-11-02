@@ -474,6 +474,7 @@ text_buffer_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, cha
             buffer.line_chars[cursors.c0.y] += buffer.line_chars[cursors.c0.y + 1];
             buffer.line_bytes[cursors.c0.y] += buffer.line_bytes[cursors.c0.y + 1];
 
+            // TODO(jt): @Speed If this becomes a speed problem, try doing remove_lines, like update_index_for_delete_forward does.
             remove_line(buffer, cursors.c0.y + 1);
 
             advance(*text);
@@ -536,7 +537,7 @@ text_buffer_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, cha
 }
 
 // TODO(jt): @Cleanup Take a second parameter to specify the count to delete and do delete in batch.
-text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, undo_modifier := Undo_Modifier.NONE) -> changed: bool {
+text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, undo_modifier := Undo_Modifier.NONE) -> /* Pointing to the internal gap buffer */ string {
     ProfileZone("text_buffer_delete_backward");
 
     assert_valid(buffer, cursors);
@@ -549,7 +550,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
         deleted := text_buffer_delete_selection(buffer, cursors);
         assert(cursors.c0 == cursors.c1);
 
-        return deleted.count > 0;
+        return deleted;
     }
 
     gb_index := text_buffer_get_gap_buffer_index_for_location(buffer, cursors.c0);
@@ -557,11 +558,12 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
     bytes := gap_buffer_get_bytes_before_gap(buffer.gb);
     if bytes.count == 0 {
-        return false;
+        return "";
     }
 
     line_to_invalidate := max(cursors.c0.y - 1, 0);
 
+    deleted: string;
     if bytes[bytes.count - 1] == "\n" {
         assert(cursors.c0.x == 0);
         assert(cursors.c0.y > 0);
@@ -574,6 +576,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
         buffer.line_chars[cursors.c0.y - 1] += buffer.line_chars[cursors.c0.y];
         buffer.line_bytes[cursors.c0.y - 1] += buffer.line_bytes[cursors.c0.y];
 
+        // TODO(jt): @Speed If this becomes a speed problem (after we can delete multiple characters), try doing remove_lines, like update_index_for_delete_forward does.
         remove_line(buffer, cursors.c0.y);
 
         old_cursor := cursors.c0;
@@ -581,14 +584,14 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
         cursors.c0.x = new_cursor_x;
         cursors.c0.y -= 1;
 
-        deleted := gap_buffer_delete_backward(*buffer.gb, 1);
+        deleted = cast(string, gap_buffer_delete_backward(*buffer.gb, 1));
 
         if undo_modifier != .OMIT {
             discard_unapplied_edits(buffer);
 
             edit := array_add(*buffer.edits);
             edit.type = .DELETE_BACKWARD;
-            edit.text = arena_push_string(buffer.edit_text_arena, cast(string, deleted));
+            edit.text = arena_push_string(buffer.edit_text_arena, deleted);
             edit.text_mark = arena_get_mark(buffer.edit_text_arena);
             edit.gb_index_before = gb_index;
             edit.gb_index_after = gb_index - deleted.count; sanity_assert(edit.gb_index_after == buffer.gb.gap_index);
@@ -621,7 +624,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
             cursors.c0.x -= 1;
 
-            deleted := gap_buffer_delete_backward(*buffer.gb, codepoint_advance);
+            deleted = cast(string, gap_buffer_delete_backward(*buffer.gb, codepoint_advance));
             assert(codepoint_advance == deleted.count);
 
             if undo_modifier != .OMIT {
@@ -629,7 +632,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
                 edit := array_add(*buffer.edits);
                 edit.type = .DELETE_BACKWARD;
-                edit.text = arena_push_string(buffer.edit_text_arena, cast(string, deleted));
+                edit.text = arena_push_string(buffer.edit_text_arena, deleted);
                 edit.text_mark = arena_get_mark(buffer.edit_text_arena);
                 edit.gb_index_before = gb_index;
                 edit.gb_index_after = gb_index - deleted.count; sanity_assert(edit.gb_index_after == buffer.gb.gap_index);
@@ -658,7 +661,7 @@ text_buffer_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursors, un
 
     assert_valid(buffer, cursors);
 
-    return true;
+    return deleted;
 }
 
 text_buffer_delete_forward_within :: (buffer: *Text_Buffer, cursors: *Text_Cursors, is_inside: (u32) -> bool) -> /* Pointing to the internal gap buffer */ string {
@@ -2002,11 +2005,35 @@ text_buffer_get_gap_buffer_index_for_location :: (buffer: Text_Buffer, loc: Text
     return index;
 }
 
-text_buffer_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
+text_buffer_context_allocator_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
     REVERSE :: cast(bool, flags & .REVERSE);
     POINTER :: cast(bool, flags & .POINTER);
-    #assert !REVERSE "text_buffer_lines does not support reverse iteration";
-    #assert !POINTER "text_buffer_lines does not support pointer iteration";
+    #assert !REVERSE "text_buffer_context_allocator_lines does not support reverse iteration";
+    #assert !POINTER "text_buffer_context_allocator_lines does not support pointer iteration";
+
+
+    // We go straight to the gap buffer and count its indices manually, so that
+    // we avoid the scan that text_buffer_get_gap_buffer_index_for_line
+    // would have to do each time through the loop.
+    //
+    // Note that even though we pass in the context allocator, making of the view will only
+    // allocate for one of the lines - the one that crosses the gap.
+    gb_index := 0;
+    for i: 0..buffer.line_count - 1 {
+        `it_index := i;
+        `it       := cast(string, gap_buffer_make_view(buffer.gb, gb_index, buffer.line_bytes[i],, context.allocator));
+
+        gb_index += buffer.line_bytes[i];
+
+        #insert(remove = #assert(false)) body;
+    }
+}
+
+text_buffer_temp_lines :: (buffer: *Text_Buffer, body: Code, flags: For_Flags) #expand {
+    REVERSE :: cast(bool, flags & .REVERSE);
+    POINTER :: cast(bool, flags & .POINTER);
+    #assert !REVERSE "text_buffer_temp_lines does not support reverse iteration";
+    #assert !POINTER "text_buffer_temp_lines does not support pointer iteration";
 
 
     // We go straight to the gap buffer and count its indices manually, so that
@@ -2325,6 +2352,12 @@ update_index_for_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors
     ProfileZone("update_index_for_delete_forward");
 
     text := _text;
+    
+    // We used to call remove_line() in the place where we now increment remove_line_count, but that's quadratic
+    // and took a long time for large deletions (such as when we hot-reload a file because of external change).
+    // We now delete in batch at the end, and until then skip over soon-to-be-deleted lines.
+    remove_line_index := cursors.c0.y + 1;
+    remove_line_count := 0;
 
     while text.count {
         if text[0] == "\n" {
@@ -2334,10 +2367,10 @@ update_index_for_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors
             buffer.line_chars[cursors.c0.y] -= 1;
             buffer.line_bytes[cursors.c0.y] -= 1;
 
-            buffer.line_chars[cursors.c0.y] += buffer.line_chars[cursors.c0.y + 1];
-            buffer.line_bytes[cursors.c0.y] += buffer.line_bytes[cursors.c0.y + 1];
+            buffer.line_chars[cursors.c0.y] += buffer.line_chars[remove_line_index + remove_line_count];
+            buffer.line_bytes[cursors.c0.y] += buffer.line_bytes[remove_line_index + remove_line_count];
 
-            remove_line(buffer, cursors.c0.y + 1);
+            remove_line_count += 1;
 
             advance(*text);
             assert(text.count >= 0);
@@ -2354,6 +2387,8 @@ update_index_for_delete_forward :: (buffer: *Text_Buffer, cursors: *Text_Cursors
             assert(text.count >= 0);
         }
     }
+    
+    remove_lines(buffer, remove_line_index, remove_line_count);
 }
 
 // c1 must be handled at the caller level
@@ -2375,6 +2410,7 @@ update_index_for_delete_backward :: (buffer: *Text_Buffer, cursors: *Text_Cursor
             buffer.line_chars[cursors.c0.y - 1] += buffer.line_chars[cursors.c0.y];
             buffer.line_bytes[cursors.c0.y - 1] += buffer.line_bytes[cursors.c0.y];
 
+            // TODO(jt): @Speed If this becomes a speed problem, try doing remove_lines, like update_index_for_delete_forward does.
             remove_line(buffer, cursors.c0.y);
 
             cursors.c0.x = new_cursor_x;
@@ -2426,6 +2462,23 @@ remove_line :: (buffer: *Text_Buffer, index: s64) {
     array_ordered_remove_by_index(*buffer.line_bytes, index);
     array_ordered_remove_by_index(*buffer.line_chars, index);
     buffer.line_count -= 1;
+}
+
+remove_lines :: (buffer: *Text_Buffer, index: s64, count: s64) {
+    sanity_assert(buffer.line_count == buffer.line_bytes.count);
+    sanity_assert(buffer.line_count == buffer.line_chars.count);
+
+    assert(index >= 0);
+    assert(index + count <= buffer.line_count);
+    
+    for index..buffer.line_count - count - 1 {
+        buffer.line_bytes[it] = buffer.line_bytes[it + count];
+        buffer.line_chars[it] = buffer.line_chars[it + count];
+    }
+    
+    buffer.line_bytes.count -= count;
+    buffer.line_chars.count -= count;
+    buffer.line_count       -= count;
 }
 
 invalidate_chunk_for_line :: (buffer: Text_Buffer, line_index: s64) {
