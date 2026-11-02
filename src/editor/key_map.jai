@@ -371,6 +371,7 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
 
         has_match_candidates := false;
         
+        best_shortcut: Shortcut;
         best_shortcut_action := default_of(T);
         best_shortcut_match  := Shortcut_Match.NONE;
         
@@ -381,6 +382,7 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
 
             match := shortcut_match(it.shortcut, key_map.buffered_input);
             if match > best_shortcut_match {
+                best_shortcut = it.shortcut;
                 best_shortcut_action = it.action;
                 best_shortcut_match = match;
             }
@@ -388,7 +390,7 @@ key_map_input :: (key_map: *Key_Map($T), event: Input_Event) -> buffered: bool, 
     
         if best_shortcut_match != .NONE {
             key_map.buffered_input = {};
-            return false, best_shortcut_action, {};
+            return false, best_shortcut_action, best_shortcut;
         } else if has_match_candidates {
             return true, default_of(T), {};
         } else {
