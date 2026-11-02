@@ -1048,20 +1048,22 @@ platform_get_window_scale_factor :: (window: Window.Window_Type) -> f32 {
 
 platform_get_monitor_refresh_rate :: (window: Window.Window_Type) -> s64 {
     #if OS == .WINDOWS {
-        monitor := MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
-        monitor_info: MONITORINFOEXA;
-        monitor_info.cbSize = size_of(type_of(monitor_info));
+        
+        return 144;
+        // monitor := MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+        // monitor_info: MONITORINFOEXA;
+        // monitor_info.cbSize = size_of(type_of(monitor_info));
 
-        success := GetMonitorInfoA(monitor, *monitor_info);
-        if success {
-            mode: DEVMODEA;
-            mode.dmSize = size_of(type_of(mode));
+        // success := GetMonitorInfoA(monitor, *monitor_info);
+        // if success {
+        //     mode: DEVMODEA;
+        //     mode.dmSize = size_of(type_of(mode));
 
-            success = EnumDisplaySettingsA(cast(*u8, *monitor_info.szDevice), ENUM_CURRENT_SETTINGS, *mode);
-            if success {
-                return mode.dmDisplayFrequency;
-            }
-        }
+        //     success = EnumDisplaySettingsA(cast(*u8, *monitor_info.szDevice), ENUM_CURRENT_SETTINGS, *mode);
+        //     if success {
+        //         return mode.dmDisplayFrequency;
+        //     }
+        // }
     } else #if OS == .MACOS {
         // TODO(jt): @Incomplete Query macOS refresh rate...
         /* Thanks, winit!

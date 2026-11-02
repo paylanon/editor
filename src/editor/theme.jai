@@ -75,6 +75,7 @@ Builtin_Themes :: enum {
     Zenburn;
     Visual_Studio_Light;
     Sokoban;
+    Colonoscopy;
 }
 
 abulafia_theme :: () -> Theme {
@@ -443,6 +444,69 @@ sokoban_theme :: () -> Theme {
     t.warning_color = unpack_srgba(0xffe6b3ff);
     t.error_color = unpack_srgba(0xc49191ff);
     
+    return t;
+}
+
+colonoscopy_theme :: () -> Theme {
+    cursor_color     := unpack_srgba(0xd0c179ff);
+    text_color       := unpack_srgba(0xc0b6a8ff);
+    background_color := unpack_srgba(0x0e1112ff);
+    keyword_color    := unpack_srgba(0xc6b7b1ff);
+    method_color     := unpack_srgba(0xc0b6a8ff);
+    highlight_color  := unpack_srgba(0x3388ccff);
+
+    cursor_minus_2 := set_alpha(adjust_saturation(cursor_color, .3), .1);
+
+    t: Theme;
+    t.builtin_index = .Sokoban;
+
+    t.cursor_color          = cursor_color;
+    t.cursor_color_hot      = { 1, 1, 1, 1 };
+    t.cursor_color_readonly = unpack_srgba(0xc49191ff);
+    t.line_color            = { 0, 0, 0, 0 };
+
+    t.selection_color            = unpack_srgba(0x2a4750ff);
+    t.highlight_color            = set_alpha(highlight_color, .4);
+    t.highlight_color_active     = set_alpha(highlight_color, .6);
+    t.matching_parenthesis_color = highlight_color;
+
+    t.background_color = background_color;
+    t.separator_color  = unpack_srgba(0x272a2aff);
+
+    t.listing_line_color               = cursor_minus_2;
+    t.listing_item_text_color          = text_color;
+    t.listing_item_text_color_marked   = keyword_color;
+    t.listing_item_text_variant_marked = .BOLD;
+
+    t.modeline_color             = unpack_srgba(0x272a2aff);
+    t.modeline_color_inactive    = t.modeline_color;
+    t.system_text_color          = unpack_srgba(0xc0b6a8ff);
+    t.system_text_color_inactive = unpack_srgba(0xa2937eff);
+
+    t.text_color           = text_color;
+    t.keyword_color        = keyword_color;
+    t.attribute_color      = unpack_srgba(0xc6b7b1ff);
+    t.directive_color      = unpack_srgba(0xc6b7b1ff);
+    t.directive_variant    = .BOLD;
+    t.string_literal_color = unpack_srgba(0xb9a185ff);
+    t.number_literal_color = unpack_srgba(0xc6b7b1ff);
+    t.comment_color        = unpack_srgba(0xaeaeaeff);
+
+    t.struct_declaration_color   = unpack_srgba(0xe0e4ccff);
+    t.enum_declaration_color     = unpack_srgba(0xe0e4ccff);
+    t.proc_declaration_color     = unpack_srgba(0xc0b6a8ff);
+    t.proc_declaration_variant   = .BOLD;
+    t.constant_declaration_color = unpack_srgba(0xc6b7b1ff);
+
+    t.mini_panel_line_color              = cursor_minus_2;
+    t.mini_panel_item_text_color         = text_color;
+    t.mini_panel_item_warning_text_color = unpack_srgba(0xffe6b3ff);
+
+    t.embark_target_color = whiten(unpack_srgba(0x00b7f0ff), .4);
+
+    t.warning_color = unpack_srgba(0xffe6b3ff);
+    t.error_color   = unpack_srgba(0xc49191ff);
+
     return t;
 }
 

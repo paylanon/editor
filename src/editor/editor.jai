@@ -2522,6 +2522,7 @@ Document_Action :: enum {
 
     MOVE_TO_START_OF_SCOPE;
     MOVE_TO_END_OF_SCOPE;
+    MOVE_TO_CHILD_SCOPE;
 
     EXPAND_SELECTION;
     EXPAND_SELECTION_TO_LINE;
@@ -3179,6 +3180,15 @@ execute_document_action :: (editor: *Editor, platform: Platform, input: Input, p
             scope := find_scope_for_location(document, view.cursors.c0);
             if scope {
                 text_buffer_move_to(document.buffer, *view.cursors, scope.loc1, view.selecting);
+                cursor_moved = true;
+            }
+        }        
+        case .MOVE_TO_CHILD_SCOPE; {
+            scope := find_scope_for_location(document, view.cursors.c0);
+            if scope && scope.first_child_index != -1 {
+                child_scope := *document.scopes[scope.first_child_index];
+                while view.cursors.c0.y > child_scope.loc0.y child_scope = *document.scopes[child_scope.next_sibling_index];
+                text_buffer_move_to(document.buffer, *view.cursors, child_scope.loc0, view.selecting);
                 cursor_moved = true;
             }
         }
@@ -5430,6 +5440,7 @@ change_theme :: (editor: *Editor, theme: string) {
         case "zenburn";              editor.theme = zenburn_theme(); theme_changed = true;
         case "visual_studio_light";  editor.theme = visual_studio_light_theme(); theme_changed = true;
         case "sokoban";              editor.theme = sokoban_theme(); theme_changed = true;
+        case "colonoscopy";          editor.theme = colonoscopy_theme(); theme_changed = true;
     }
 
     if theme_changed {
@@ -5673,13 +5684,13 @@ find_or_add_document :: (editor: *Editor, platform: Platform, kind: Document.Kin
                 case "hpp";   #through;
                 case "cpp";   #through;
                 case "h";     #through;
-                case "slang"; #through; 
-                case "sl";    #through;
                 case "cc";    #through;
                 case "c";     document.lang = .C;
                 case "jai";   document.lang = .JAI;
                 case "vert";  #through;
                 case "frag";  #through;
+                case "slang"; #through;
+                case "sl";    #through;
                 case "glsl";  document.lang = .GLSL;
             }
         }
@@ -5897,9 +5908,10 @@ document_update_tokens :: (document: *Document) {
 
     if #complete document.lang == {
         case .TEXT;  // Nothing
+        case .GLSL; #through;
         case .C;     lang_c_update_tokens(document);
         case .JAI;   lang_jai_update_tokens(document);
-        case .GLSL;  lang_glsl_update_tokens(document);
+        // case .GLSL;  lang_glsl_update_tokens(document);
     }
 }
 

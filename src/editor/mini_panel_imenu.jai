@@ -17,6 +17,8 @@ history: Mini_Panel_History;
 
 filter: Token_Type;
 
+last_embark_input: Input_Event;
+
 Search_Userdata :: struct {
     original_x: s64; // Not used for listings.
     original_y: s64;
@@ -64,11 +66,13 @@ init :: (editor: *Editor, platform: Platform, input: Input) {
     editor.embark_target = .MINI_PANEL;
     editor.embark_act_proc = embark_act;
     item := array_add(*editor.embark_panel.items);
-    item.text = "1 Filter to Struct";
+    item.text = "1 Filter to Structs";
     item = array_add(*editor.embark_panel.items);
-    item.text = "2 Filter to Enum";
+    item.text = "2 Filter to Enums";
     item = array_add(*editor.embark_panel.items);
-    item.text = "3 Filter to Proc";
+    item.text = "3 Filter to Procs";
+    item = array_add(*editor.embark_panel.items);
+    item.text = "4 Filter to Constants";
     item = array_add(*editor.embark_panel.items);
     item.text = "0 Reset Filter";
 }
@@ -76,14 +80,17 @@ init :: (editor: *Editor, platform: Platform, input: Input) {
 embark_act :: (editor: *Editor, event: Input_Event, platform: Platform) {
     
     if event.codepoint == {
-        case; return;
+        case .ENTER;    embark_act(editor, last_embark_input, platform);
         case #char "1"; filter = .STRUCT_DECLARATION;
         case #char "2"; filter = .ENUM_DECLARATION;
         case #char "3"; filter = .PROC_DECLARATION;
+        case #char "4"; filter = .CONSTANT_DECLARATION;
         case #char "0"; filter = .UNINITIALIZED;
+        case; return;
     }
     update(editor, platform, {}, true, false);
     editor.embark_panel.open = false; // XXX close_embark_panel()
+    last_embark_input = event;
 }
 
 update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bool, selected_item_changed: bool) {
@@ -122,8 +129,15 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                     new_item_index := -1;
                     
                     for document.tokens {
+                        
                         if filter then if it.type != filter continue;
-                        if !(it.type == .STRUCT_DECLARATION || it.type == .ENUM_DECLARATION || it.type == .PROC_DECLARATION) continue;
+                        
+                        if !(
+                          it.type == .STRUCT_DECLARATION
+                          || it.type == .ENUM_DECLARATION
+                          || it.type == .PROC_DECLARATION
+                          || it.type == .CONSTANT_DECLARATION
+                        ) continue;
                         
                         token := it;
                         token.loc1.x += 1;
@@ -277,6 +291,7 @@ confirm :: (editor: *Editor, platform: Platform, input: Input) -> buffer_changed
     panel.highlight_index = -1;
 
     close_mini_panel(editor, platform, input);
+    filter = .UNINITIALIZED;
 
     return false;
 }
@@ -326,4 +341,5 @@ cancel :: (editor: *Editor, platform: Platform, input: Input) {
     panel.highlight_index = -1;
 
     close_mini_panel(editor, platform, input);
+    filter = .UNINITIALIZED;
 }

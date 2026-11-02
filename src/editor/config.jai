@@ -19,7 +19,7 @@ Global_Config :: struct {
         TEXT = {},
         C    = #run handmade_theme(),
         JAI  = {},
-        GLSL = {}
+        GLSL = #run colonoscopy_theme(),
     };
 }
 
