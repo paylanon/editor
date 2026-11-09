@@ -39,6 +39,8 @@ lang_c_update_tokens :: (document: *Document) {
         return;
     }
 
+    g_document = document;
+    
     array_reset_keeping_memory(*document.tokens);
 
     // TODO(jt): @Speed @Memory This always copies the entire text buffer. While this is bad,
@@ -60,8 +62,8 @@ lang_c_update_tokens :: (document: *Document) {
         if token.type == .UNINITIALIZED  continue;
         if token.type == .INVALID        continue;
         // We currently don't have special handling for these, so don't send them down the pipe.
-        if token.type == .IDENTIFIER     continue;
-        if token.type == .PUNCTUATION    continue;
+        // if token.type == .IDENTIFIER     continue;
+        // if token.type == .PUNCTUATION    continue;
         
         if token.loc0 == token.loc1      continue; // Empty token.
 
@@ -83,6 +85,14 @@ lang_c_update_tokens :: (document: *Document) {
 //
 
 USERDATA__IS_INCLUDE_DIRECTIVE: u16 : 0x01;
+
+// // @ProcDeclTokens just hacking this in for basic imenu in C - payl
+g_document: *Document;
+recent_c: [2] u8;
+recent_cursor: u8;
+get_last_token :: () -> *Token {
+    return peek_pointer(g_document.tokens);
+}
 
 get_next_token :: (lexer: *Lexer) -> Token {
     lexer_eat_whitespace(lexer);
@@ -129,7 +139,7 @@ get_next_token :: (lexer: *Lexer) -> Token {
         case ",";   parse_simple(lexer, *token);
         case "{";   parse_simple(lexer, *token);
         case "}";   parse_simple(lexer, *token);
-        case "(";   parse_simple(lexer, *token);
+        case "(";   parse_opening_parenthesis(lexer, *token);
         case ")";   parse_simple(lexer, *token);
         case "[";   parse_simple(lexer, *token);
         case "]";   parse_simple(lexer, *token);
@@ -143,6 +153,8 @@ get_next_token :: (lexer: *Lexer) -> Token {
         }
     }
 
+    recent_c[recent_cursor] = c;
+    recent_cursor ^= 1;
     lexer_write_recent_token(lexer, token);
 
     return token;
@@ -257,6 +269,10 @@ parse_number_or_period :: (lexer: *Lexer, token: *Token) {
 
 parse_identifier_or_keyword :: (lexer: *Lexer, token: *Token) {
     ident := lexer_eat_identifier(lexer);
+    
+    if ident == "uint8_t" {
+        assert(true);
+    }
 
     token.type = .IDENTIFIER;
     if lexer_is_keyword(ident, KEYWORDS) {
@@ -264,6 +280,23 @@ parse_identifier_or_keyword :: (lexer: *Lexer, token: *Token) {
     }
 
     lexer_set_token_end(lexer, token);
+}
+
+parse_opening_parenthesis :: (lexer: *Lexer, token: *Token) {
+    token.type = .PUNCTUATION;
+    lexer_advance_horizontally(lexer);
+    lexer_set_token_end(lexer, token);
+    
+    // @ProcDeclTokens   return_type proc(
+    last_token := get_last_token();
+    pointer_return := recent_c[0] == "*" || recent_c[1] == "*";
+    if last_token.type == .IDENTIFIER || pointer_return {
+        return_type := lexer_read_recent_token(lexer, -2).type;
+        if return_type == .IDENTIFIER || (pointer_return && last_token.type != .PUNCTUATION) {
+            last_token.type = .PROC_DECLARATION;
+            last_token.loc1.x -= 1; // parenthesis is included for some reason
+        } else last_token.type = .PROC_CALL;
+    }
 }
 
 parse_equal :: (lexer: *Lexer, token: *Token) {
@@ -573,12 +606,20 @@ KEYWORDS :: string.[
     //
     // These are the official keywords as of C23 (https://cppreference.com/c/keyword)
     //
-    "alignas", "alignof", "auto", "bool", "break", "case", "char", "const", "constexpr",
-    "continue", "default", "do", "double", "else", "enum",
-    "extern", "false", "float", "for", "goto", "if", "inline", "int", "long", "nullptr", "register",
+    // * sans what should be a 'type identifier' instead - payl
+    // 
+    "alignas", "alignof", "auto",  // "bool", 
+    "break", "case", // "char", 
+    "const", "constexpr",
+    "continue", "default", "do", // "double", 
+    "else", "enum",
+    "extern", "false", // "float", 
+    "for", "goto", "if", "inline", // "int", 
+    "long", "nullptr", "register",
     "restrict", "return", "short", "signed",
     "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
-    "typeof", "typeof_unqual", "union", "unsigned", "void", "volatile", "while",
+    "typeof", "typeof_unqual", "union", "unsigned", // "void", 
+    "volatile", "while",
     "_Alignas", "_Alignof", "_Atomic", "_BitInt", "_Bool", "_Complex", "_Decimal128", "_Decimal32",
     "_Decimal64", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local",
 

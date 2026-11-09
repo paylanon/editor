@@ -219,6 +219,9 @@ handmade_theme :: () -> Theme {
     t.string_literal_color = unpack_srgba(0x6b8e23ff);
     t.number_literal_color = unpack_srgba(0x759fbfff);
     t.comment_color        = unpack_srgba(0xa0a0a0ff);
+    
+    t.proc_declaration_color     = unpack_srgba(0xc69e6bff);
+    t.proc_declaration_variant   = .BOLD;
 
     t.mini_panel_line_color      = cursor_minus_2;
     t.mini_panel_item_text_color = text_color;
