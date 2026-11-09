@@ -294,7 +294,6 @@ parse_opening_parenthesis :: (lexer: *Lexer, token: *Token) {
         return_type := lexer_read_recent_token(lexer, -2).type;
         if return_type == .IDENTIFIER || (pointer_return && last_token.type != .PUNCTUATION) {
             last_token.type = .PROC_DECLARATION;
-            last_token.loc1.x -= 1; // parenthesis is included for some reason
         } else last_token.type = .PROC_CALL;
     }
 }

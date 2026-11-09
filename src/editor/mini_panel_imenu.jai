@@ -164,6 +164,7 @@ update :: (editor: *Editor, platform: Platform, input: Input, buffer_changed: bo
                             // need for string alloc.
                             
                             item.text = ident;
+                            if document.lang == .C item.text.count -= 1;
                             item.text_color = get_style_for_token_type(document.theme, it.type);
                             item.highlight_x0 = x0;
                             item.highlight_x1 = x0 + search_part1_char_count;
